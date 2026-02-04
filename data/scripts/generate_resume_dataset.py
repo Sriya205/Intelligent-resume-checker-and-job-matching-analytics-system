@@ -4,7 +4,6 @@ from faker import Faker
 
 fake = Faker()
 
-# Expanded skill set
 skills_list = [
     # Programming
     "Python", "Java", "C++", "C", "R", "Go",
