@@ -1,56 +1,54 @@
 import pandas as pd
 import random
-import os
 
-# Job titles and requirements
-job_titles = [
-    "Data Scientist", "Machine Learning Engineer", "Software Developer",
-    "Web Developer", "DevOps Engineer", "Product Manager", "Marketing Specialist",
-    "Sales Representative", "UI/UX Designer", "Business Analyst"
+job_roles = [
+    "Data Scientist", "Data Analyst", "ML Engineer", "AI Engineer",
+    "Software Engineer", "Backend Developer", "Frontend Developer",
+    "Full Stack Developer", "Cloud Engineer"
 ]
 
-required_skills = {
-    "Data Scientist": ["Python", "Machine Learning", "SQL", "Data Analysis", "Statistics"],
-    "Machine Learning Engineer": ["Python", "TensorFlow", "PyTorch", "ML", "Computer Vision"],
-    "Software Developer": ["Java", "Python", "JavaScript", "SQL", "Git"],
-    "Web Developer": ["JavaScript", "React", "Node.js", "HTML", "CSS"],
-    "DevOps Engineer": ["AWS", "Docker", "Kubernetes", "Linux", "CI/CD"],
-    "Product Manager": ["Agile", "Scrum", "Project Management", "Analytics", "Communication"],
-    "Marketing Specialist": ["SEO", "Content Creation", "Social Media", "Analytics", "Marketing"],
-    "Sales Representative": ["Sales", "CRM", "Communication", "Negotiation", "Customer Service"],
-    "UI/UX Designer": ["UI/UX Design", "Figma", "Adobe XD", "Prototyping", "User Research"],
-    "Business Analyst": ["SQL", "Excel", "Data Analysis", "Requirements Gathering", "Reporting"]
+skills_mapping = {
+    "Data Scientist": ["Python", "Machine Learning", "SQL", "NLP", "Data Analysis"],
+    "Data Analyst": ["SQL", "Excel", "Power BI", "Tableau", "Python"],
+    "ML Engineer": ["Python", "Deep Learning", "TensorFlow", "Docker", "ML Ops"],
+    "AI Engineer": ["Python", "NLP", "Computer Vision", "Deep Learning", "AWS"],
+    "Software Engineer": ["Java", "C++", "Git", "Linux", "Problem Solving"],
+    "Backend Developer": ["Python", "Java", "APIs", "SQL", "Docker"],
+    "Frontend Developer": ["HTML", "CSS", "JavaScript", "React", "UI/UX"],
+    "Full Stack Developer": ["React", "Node.js", "MongoDB", "SQL", "Git"],
+    "Cloud Engineer": ["AWS", "Azure", "Docker", "Kubernetes", "Linux"]
 }
 
-experience_levels = ["Entry Level", "Mid Level", "Senior Level", "Lead"]
+locations = ["Remote", "Delhi", "Bangalore", "Hyderabad", "Pune"]
+employment_types = ["Full-Time", "Internship", "Contract"]
 
-# Generate synthetic job descriptions
-def generate_job_description_dataset(num_samples=100):
-    jobs = []
-    for i in range(num_samples):
-        title = random.choice(job_titles)
-        skills = required_skills[title] + random.sample(list(set(sum(required_skills.values(), [])) - set(required_skills[title])), random.randint(0, 3))
-        experience = random.choice(experience_levels)
-        salary = random.randint(50000, 150000)
-        location = random.choice(["Remote", "New York", "San Francisco", "London", "Berlin"])
 
-        # Create job description text
-        job_text = f"Job Title: {title}. Required Skills: {', '.join(skills)}. Experience Level: {experience}. Salary: ${salary}. Location: {location}."
+def generate_job(job_id):
+    role = random.choice(job_roles)
+    skills = skills_mapping[role]
+    exp_required = random.randint(0, 10)
 
-        jobs.append({
-            "id": i+1,
-            "title": title,
-            "job_description": job_text,
-            "required_skills": skills,
-            "experience_level": experience,
-            "salary": salary,
-            "location": location
-        })
+    return {
+        "job_id": job_id,
+        "job_role": role,
+        "required_skills": ", ".join(skills),
+        "experience_required": exp_required,
+        "job_location": random.choice(locations),
+        "employment_type": random.choice(employment_types),
+        "salary_range_lpa": f"{random.randint(4,10)}-{random.randint(12,35)}",
+        "job_description": (
+            f"We are hiring a {role} with {exp_required}+ years experience. "
+            f"Required skills include {', '.join(skills)}."
+        )
+    }
 
-    return pd.DataFrame(jobs)
+data = []
+TOTAL_JOBS = 4000
 
-if __name__ == "__main__":
-    df = generate_job_description_dataset(100)
-    os.makedirs("data/raw", exist_ok=True)
-    df.to_csv("data/raw/job_description_dataset.csv", index=False)
-    print("Job description dataset generated and saved to data/raw/job_description_dataset.csv")
+for i in range(1, TOTAL_JOBS + 1):
+    data.append(generate_job(i))
+
+df = pd.DataFrame(data)
+df.to_csv("data/raw/job_description_dataset.csv", index=False)
+
+print("Advanced job description dataset generated successfully!")
