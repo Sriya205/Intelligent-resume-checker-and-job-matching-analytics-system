@@ -1,66 +1,66 @@
 import pandas as pd
 import random
-import os
+from faker import Faker
 
-# Skills and experiences
-skills_pool = [
-    "Python", "Java", "JavaScript", "C++", "SQL", "Machine Learning", "Data Analysis",
-    "Web Development", "React", "Node.js", "AWS", "Docker", "Git", "Agile", "Scrum",
-    "Project Management", "Marketing", "SEO", "Sales", "Customer Service", "UI/UX Design",
-    "Figma", "Adobe XD", "Prototyping", "User Research", "Business Analysis", "Excel",
-    "Requirements Gathering", "Reporting", "Communication", "Negotiation", "CRM"
+fake = Faker()
+
+skills_list = [
+    # Programming
+    "Python", "Java", "C++", "C", "R", "Go",
+    # Web
+    "HTML", "CSS", "JavaScript", "React", "Angular", "Node.js",
+    # Data & AI
+    "Machine Learning", "Deep Learning", "NLP", "Computer Vision",
+    "Data Analysis", "Data Mining",
+    # Databases
+    "SQL", "MySQL", "PostgreSQL", "MongoDB",
+    # Tools
+    "Git", "GitHub", "Linux", "Docker", "Kubernetes",
+    # Cloud
+    "AWS", "Azure", "GCP",
+    # Visualization
+    "Power BI", "Tableau", "Matplotlib", "Seaborn",
+    # Soft skills
+    "Communication", "Problem Solving", "Leadership", "Teamwork"
 ]
 
-experience_levels = ["Entry Level", "Mid Level", "Senior Level", "Lead", "Principal"]
-
-job_titles = [
-    "Software Engineer", "Data Scientist", "Web Developer", "Product Manager",
-    "Marketing Specialist", "Sales Representative", "UI/UX Designer", "Business Analyst",
-    "DevOps Engineer", "Machine Learning Engineer"
+roles = [
+    "Data Scientist", "Data Analyst", "ML Engineer", "AI Engineer",
+    "Software Engineer", "Backend Developer", "Frontend Developer",
+    "Full Stack Developer", "Cloud Engineer"
 ]
 
-# Generate synthetic resumes
-def generate_resume_dataset(num_samples=100):
-    resumes = []
-    for i in range(num_samples):
-        name = f"Candidate {i+1}"
-        title = random.choice(job_titles)
-        experience = random.choice(experience_levels)
+education_levels = ["B.Tech", "M.Tech", "B.Sc", "M.Sc", "MBA", "PhD"]
+locations = ["Delhi", "Mumbai", "Bangalore", "Hyderabad", "Pune", "Chennai"]
+certifications = ["None", "AWS Certified", "Google Data Engineer", "Azure AI", "Coursera ML"]
 
-        # Generate skills (5-10 skills)
-        num_skills = random.randint(5, 10)
-        skills = random.sample(skills_pool, num_skills)
+def generate_resume(resume_id):
+    skills = random.sample(skills_list, random.randint(6, 12))
+    experience = random.randint(0, 12)
 
-        # Generate education
-        education = random.choice([
-            "Bachelor's in Computer Science",
-            "Master's in Data Science",
-            "Bachelor's in Business Administration",
-            "Master's in Engineering",
-            "Bachelor's in Marketing"
-        ])
+    return {
+        "resume_id": resume_id,
+        "candidate_name": fake.name(),
+        "email": fake.email(),
+        "phone": fake.phone_number(),
+        "location": random.choice(locations),
+        "education": random.choice(education_levels),
+        "experience_years": experience,
+        "current_role": random.choice(roles),
+        "target_role": random.choice(roles),
+        "skills": ", ".join(skills),
+        "certifications": random.choice(certifications),
+        "expected_salary_lpa": random.randint(3, 30),
+        "resume_summary": f"{experience} years experienced professional skilled in {', '.join(skills[:4])}."
+    }
 
-        # Generate experience description
-        experience_years = random.randint(1, 15)
-        experience_desc = f"{experience_years} years of experience in {title} role."
+data = []
+TOTAL_RESUMES = 10000
 
-        # Create resume text
-        resume_text = f"Name: {name}. Job Title: {title}. Experience: {experience_desc}. Skills: {', '.join(skills)}. Education: {education}."
+for i in range(1, TOTAL_RESUMES + 1):
+    data.append(generate_resume(i))
 
-        resumes.append({
-            "id": i+1,
-            "name": name,
-            "resume_text": resume_text,
-            "skills": skills,
-            "experience_level": experience,
-            "education": education,
-            "experience_years": experience_years
-        })
+df = pd.DataFrame(data)
+df.to_csv("data/raw/resume_dataset.csv", index=False)
 
-    return pd.DataFrame(resumes)
-
-if __name__ == "__main__":
-    df = generate_resume_dataset(100)
-    os.makedirs("data/raw", exist_ok=True)
-    df.to_csv("data/raw/resume_dataset.csv", index=False)
-    print("Resume dataset generated and saved to data/raw/resume_dataset.csv")
+print("Advanced resume dataset generated successfully!")
