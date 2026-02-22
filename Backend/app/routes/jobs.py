@@ -1,25 +1,19 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from .database import SessionLocal
-from .models import Job
-from .schemas import JobCreate
+from app.config import get_db
+from app.models.job import Job
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/")
-def create_job(job: JobCreate, db: Session = Depends(get_db)):
-    db_job = Job(title=job.title, description=job.description)
-    db.add(db_job)
+def create_job(title: str, company_name: str, description: str, db: Session = Depends(get_db)):
+    job = Job(title=title, company_name=company_name, description=description)
+    db.add(job)
     db.commit()
-    db.refresh(db_job)
-    return db_job
+    db.refresh(job)
+    return job
+
 
 @router.get("/")
 def get_jobs(db: Session = Depends(get_db)):
