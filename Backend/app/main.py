@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from app.config import engine, Base
 
-# Import ALL models (VERY IMPORTANT)
-from app.models import candidate, job, resume, email_log
+# Import routers directly (clean way)
+from app.routes.auth import router as auth_router
+from app.routes.candidates import router as candidates_router
+from app.routes.email import router as email_router
+from app.routes.jobs import router as jobs_router
+from app.routes.ranking import router as ranking_router
+from app.routes.reports import router as reports_router
+from app.routes.resumes import router as resumes_router
 
-# Import routers
-from app.routes import jobs, resumes, ranking
+# ⚠️ Only keep this if explainability.py exists
+# from app.routes.explainability import router as explainability_router
+
 
 app = FastAPI(title="Intelligent Resume Checker API")
 
@@ -13,25 +20,16 @@ app = FastAPI(title="Intelligent Resume Checker API")
 Base.metadata.create_all(bind=engine)
 
 # Include routers
-from app.routes import (
-    auth,
-    candidates,
-    jobs,
-    resumes,
-    ranking,
-    email,
-    explainability,
-    reports,
-)
+app.include_router(auth_router)
+app.include_router(candidates_router)
+app.include_router(email_router)
+app.include_router(jobs_router)
+app.include_router(ranking_router)
+app.include_router(reports_router)
+app.include_router(resumes_router)
 
-app.include_router(auth.router)
-app.include_router(candidates.router)
-app.include_router(jobs.router)
-app.include_router(resumes.router)
-app.include_router(ranking.router)
-app.include_router(email.router)
-app.include_router(explainability.router)
-app.include_router(reports.router)
+# ⚠️ Only include if file exists
+# app.include_router(explainability_router)
 
 
 @app.get("/")
