@@ -1,7 +1,0 @@
-Backend/venv/
-venv/
-__pycache__/
-*.pyc
-*.db
-.env
-uploads/
