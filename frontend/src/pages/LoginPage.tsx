@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import '@/styles/auth.css';
+import '@/styles/auth.css';   
+// styles for global.css
+// import '@/styles/global.css';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,8 +57,8 @@ export default function LoginPage() {
           <p className="text-muted-foreground mt-1">AI-Powered Applicant Tracking System</p>
         </div>
 
-        <Card>
-          <CardHeader>
+        <Card className="auth-card">
+          <CardHeader className="auth-card-header">
             <CardTitle>
               {mode === 'login' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
             </CardTitle>
@@ -67,7 +70,7 @@ export default function LoginPage() {
                 : 'Enter your email to receive a reset link'}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="auth-card-content">
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
