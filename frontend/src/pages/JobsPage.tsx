@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function JobsPage() {
   const { jobs, addJob, updateJob, deleteJob } = useATS();
@@ -36,7 +37,7 @@ export default function JobsPage() {
     setOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const jobData: Job = {
       id: editing?.id || crypto.randomUUID(),
@@ -49,8 +50,29 @@ export default function JobsPage() {
       createdAt: editing?.createdAt || new Date(),
     };
     if (editing) {
+      await supabase
+      .from("jobs")
+      .update({
+        title: jobData.title,
+        description: jobData.description,
+        required_skills: jobData.skills,
+        experience_required: 0
+      })
+      .eq("id", editing.id);
+      
       updateJob(jobData);
     } else {
+      const { error } = await supabase
+      .from("jobs")
+      .insert({
+        id: jobData.id,
+        title: jobData.title,
+        description: jobData.description,
+        required_skills: jobData.skills,
+        experience_required: 0
+      });
+      
+      if (error) console.error(error);
       addJob(jobData);
     }
     setOpen(false);

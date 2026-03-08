@@ -58,6 +58,40 @@ export default function ScreeningPage() {
         const { data, error } = await supabase.functions.invoke('analyze-resume', {
           body: { resumeText: rawText, action: 'parse' },
         });
+        if (error) throw error;
+
+// 🔹 SAVE CANDIDATE TO DATABASE
+        const { data: candidateData, error: candidateError } = await supabase
+        .from("candidates")
+        .insert({
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          skills: data.skills,
+          experience: data.experience,
+          education: data.education,
+        })
+        .select()
+        .single();
+        if (candidateError) {
+          console.error("Database insert error:", candidateError);
+        }
+        let matchScore = 0;
+        
+        if (selectedJob) {
+          const job = jobs.find(j => j.id === selectedJob);
+          const scoreResponse = await supabase.functions.invoke('analyze-resume', {
+            body: {
+              action: "score",
+              resumeText: rawText,
+              jobDescription: job?.description || "",
+              candidateName: data.name,
+              candidateSkills: data.skills
+            }
+          });
+          
+          matchScore = scoreResponse.data?.matchScore || 0;
+        }
 
         if (error) throw error;
 
