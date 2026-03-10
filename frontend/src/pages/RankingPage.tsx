@@ -13,13 +13,14 @@ import { useToast } from '@/hooks/use-toast';
 export default function RankingPage() {
   const { candidates, resumes, jobs, addCandidate, updateCandidate } = useATS();
   const { toast } = useToast();
-  const [selectedJob, setSelectedJob] = useState<string>('');
+  const [selectedJob, setSelectedJob] = useState<string>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [screening, setScreening] = useState(false);
 
-  const filteredCandidates = selectedJob
-    ? candidates.filter(c => c.jobId === selectedJob).sort((a, b) => b.matchScore - a.matchScore)
-    : candidates.sort((a, b) => b.matchScore - a.matchScore);
+  const filteredCandidates =
+    selectedJob !== "all"
+      ? [...candidates].filter(c => c.jobId === selectedJob).sort((a, b) => b.matchScore - a.matchScore)
+      : [...candidates].sort((a, b) => b.matchScore - a.matchScore);
 
   const screenResumes = async () => {
     if (!selectedJob) {
@@ -29,7 +30,9 @@ export default function RankingPage() {
     const job = jobs.find(j => j.id === selectedJob);
     if (!job) return;
 
-    const jobResumes = resumes.filter(r => r.jobId === selectedJob && r.status === 'parsed');
+    const jobResumes = resumes.filter(
+      r => r.status === "parsed" && (!selectedJob || selectedJob === "none" || r.jobId === selectedJob)
+    );
     if (jobResumes.length === 0) {
       toast({ title: 'No resumes', description: 'Upload and parse resumes linked to this job first.', variant: 'destructive' });
       return;
@@ -83,6 +86,10 @@ export default function RankingPage() {
   const scoreColor = (score: number) =>
     score >= 80 ? 'text-[hsl(142,71%,45%)]' : score >= 60 ? 'text-[hsl(38,92%,50%)]' : 'text-destructive';
 
+  if (!candidates || !jobs) {
+    return <div className="p-6">Loading candidates...</div>;
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -93,9 +100,19 @@ export default function RankingPage() {
         <div className="flex gap-3 items-end">
           <div className="w-64">
             <Select value={selectedJob} onValueChange={setSelectedJob}>
-              <SelectTrigger><SelectValue placeholder="Select a job" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a job" />
+              </SelectTrigger>
+
               <SelectContent>
-                {jobs.map(j => <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>)}
+                <SelectItem value="all">All Candidates</SelectItem>
+
+                {jobs?.map((j) => (
+                  <SelectItem key={j.id} value={j.id}>
+                    {j.title}
+                  </SelectItem>
+                ))}
+
               </SelectContent>
             </Select>
           </div>
@@ -114,7 +131,7 @@ export default function RankingPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {filteredCandidates.map((c, i) => (
+          {filteredCandidates?.map((c, i) => (
             <Card key={c.id} className="overflow-hidden">
               <div
                 className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors"

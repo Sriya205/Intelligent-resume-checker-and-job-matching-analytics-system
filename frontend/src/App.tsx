@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ATSProvider } from "@/contexts/ATSContext";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/LoginPage";
+import ConfirmEmailPage from "@/pages/ConfirmEmailPage";
 import DashboardPage from "@/pages/DashboardPage";
 import JobsPage from "@/pages/JobsPage";
 import ScreeningPage from "@/pages/ScreeningPage";
@@ -28,6 +29,7 @@ const App = () => (
           <ATSProvider>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/confirm-email" element={<ConfirmEmailPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route element={<AppLayout />}>
                 <Route path="/dashboard" element={<DashboardPage />} />

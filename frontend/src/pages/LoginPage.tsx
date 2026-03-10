@@ -12,12 +12,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
-  const { user, signIn, signUp, resetPassword, loading } = useAuth();
+  const { user, signIn, signUp, resetPassword, loading, demoLogin } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [submitting, setSubmitting] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
 
   if (loading) return null;
   if (user) return <Navigate to="/dashboard" replace />;
@@ -34,13 +35,27 @@ export default function LoginPage() {
       } else if (mode === 'signup') {
         const { error } = await signUp(email, password);
         if (error) throw error;
-        toast({ title: 'Account created', description: 'Please check your email to verify your account.' });
+        setSignupSuccess(true);
+        toast({ title: 'Account created!', description: 'Please check your email to confirm your account. Click the link in the confirmation email to complete signup.' });
       } else {
+        // Try Supabase authentication first
         const { error } = await signIn(email, password);
-        if (error) throw error;
+        if (error) {
+          // If Supabase is not configured, show proper error
+          if (error.message.includes('Invalid API key') || error.message.includes('Missing environment variable')) {
+            toast({
+              title: 'Supabase Not Configured',
+              description: 'Please set up VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your .env file, or use demo mode.',
+              variant: 'destructive'
+            });
+          } else {
+            // Show actual authentication error
+            throw error;
+          }
+        }
       }
     } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      toast({ title: 'Error', description: err.message || 'Authentication failed', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -71,63 +86,108 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="auth-card-content">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="hr@company.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              {mode !== 'forgot' && (
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
+            {signupSuccess ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-medium text-green-800 mb-2">✓ Account created successfully!</p>
+                  <p className="text-sm text-green-700">A confirmation email has been sent to <strong>{email}</strong></p>
                 </div>
-              )}
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting
-                  ? 'Please wait...'
-                  : mode === 'login'
-                  ? 'Sign In'
-                  : mode === 'signup'
-                  ? 'Create Account'
-                  : 'Send Reset Link'}
-              </Button>
-            </form>
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                  <p className="text-sm font-medium text-blue-800">Next steps:</p>
+                  <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                    <li>Check your email inbox</li>
+                    <li>Click the "Confirm your email" link</li>
+                    <li>You'll be automatically logged in</li>
+                  </ol>
+                </div>
+                <Button
+                  onClick={() => {
+                    setSignupSuccess(false);
+                    setMode('login');
+                    setEmail('');
+                    setPassword('');
+                  }}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Back to Sign In
+                </Button>
+              </div>
+            ) : (
+              <>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="Enter your mail"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  {mode !== 'forgot' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                  )}
+                  <Button type="submit" className="w-full" disabled={submitting}>
+                    {submitting
+                      ? 'Please wait...'
+                      : mode === 'login'
+                      ? 'Sign In'
+                      : mode === 'signup'
+                      ? 'Create Account'
+                      : 'Send Reset Link'}
+                  </Button>
+                </form>
 
-            <div className="mt-4 text-center text-sm space-y-2">
-              {mode === 'login' && (
-                <>
-                  <button onClick={() => setMode('forgot')} className="text-primary hover:underline block w-full">
-                    Forgot password?
-                  </button>
-                  <p className="text-muted-foreground">
-                    Don't have an account?{' '}
-                    <button onClick={() => setMode('signup')} className="text-primary hover:underline">
-                      Sign up
+                <div className="mt-4 text-center text-sm space-y-2">
+                  {mode === 'login' && (
+                    <>
+                      <button onClick={() => setMode('forgot')} className="text-primary hover:underline block w-full">
+                        Forgot password?
+                      </button>
+                      <p className="text-muted-foreground">
+                        Don't have an account?{' '}
+                        <button onClick={() => setMode('signup')} className="text-primary hover:underline">
+                          Sign up
+                        </button>
+                      </p>
+                      <div className="pt-2 border-t border-border">
+                        <Button
+                          onClick={() => {
+                            demoLogin();
+                            toast({ title: 'Demo Mode', description: 'Logged in with demo credentials' });
+                            window.location.href = '/dashboard';
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                        >
+                          Try Demo Mode
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                  {mode !== 'login' && (
+                    <button onClick={() => setMode('login')} className="text-primary hover:underline">
+                      Back to sign in
                     </button>
-                  </p>
-                </>
-              )}
-              {mode !== 'login' && (
-                <button onClick={() => setMode('login')} className="text-primary hover:underline">
-                  Back to sign in
-                </button>
-              )}
-            </div>
+                  )}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

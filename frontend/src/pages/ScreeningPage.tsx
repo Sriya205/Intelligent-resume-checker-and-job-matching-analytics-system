@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useATS } from '@/contexts/ATSContext';
 import { Resume } from '@/types/ats';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,21 +11,56 @@ import { Upload, FileText, CheckCircle, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+
+
 export default function ScreeningPage() {
-  const { resumes, addResume, updateResume, jobs } = useATS();
+  const { resumes, addResume, updateResume, jobs, addCandidate } = useATS();
   const { toast } = useToast();
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [selectedJob, setSelectedJob] = useState<string>('');
 
-  const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(`[Could not read file: ${file.name}]`);
-      reader.readAsText(file);
+  useEffect(() => {
+    fetchResumes();
+  }, []);
+  
+  const fetchResumes = async () => {
+    const { data, error } = await supabase
+    .from("resumes")
+    .select("*");
+
+    if (error) {
+      console.error("Fetch resumes error:", error);
+      return;
+    }
+
+    data?.forEach((candidate: any) => {
+      addResume({
+        id: candidate.id,
+        fileName: "resume",
+        candidateName: candidate.name,
+        email: candidate.email,
+        phone: candidate.phone,
+        skills: candidate.skills || [],
+        experience: candidate.experience || "",
+        education: candidate.education || "",
+        rawText: "",
+        status: "parsed",
+        jobId: undefined,
+        uploadedAt: new Date(candidate.created_at)
+      });
     });
+  };
+
+  const readFileAsText = async (file: File): Promise<string> => {
+    try {
+      const text = await file.text();
+      return text;
+    } catch (err) {
+      console.error("File read error:", err);
+      return "";
+    }
   };
 
   const processFiles = useCallback(async (files: FileList) => {
@@ -35,7 +70,27 @@ export default function ScreeningPage() {
 
     for (let i = 0; i < total; i++) {
       const file = files[i];
+      console.log("Processing file:", file.name);
+      console.log("Uploading:", file.name);
       const rawText = await readFileAsText(file);
+      console.log("Extracted text:", rawText.slice(0,200));
+      console.log("Processing file:", file.name);
+
+      const filePath = `${crypto.randomUUID()}-${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("resumes")
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error("Resume upload error:", uploadError);
+      }
+
+// 🔹 GET PUBLIC URL
+      const { data: publicUrlData } = supabase.storage
+        .from("resumes")
+        .getPublicUrl(filePath);
+
+      const resumeUrl = publicUrlData.publicUrl;
 
       const resume: Resume = {
         id: crypto.randomUUID(),
@@ -48,7 +103,7 @@ export default function ScreeningPage() {
         education: '',
         rawText,
         status: 'parsing',
-        jobId: selectedJob || undefined,
+        jobId: selectedJob !== "none" ? selectedJob : undefined,
         uploadedAt: new Date(),
       };
       addResume(resume);
@@ -58,10 +113,12 @@ export default function ScreeningPage() {
         const { data, error } = await supabase.functions.invoke('analyze-resume', {
           body: { resumeText: rawText, action: 'parse' },
         });
+        console.log("AI Parsed Data:", data);
         if (error) throw error;
 
 // 🔹 SAVE CANDIDATE TO DATABASE
         const { data: candidateData, error: candidateError } = await supabase
+        
         .from("candidates")
         .insert({
           name: data.name,
@@ -70,6 +127,7 @@ export default function ScreeningPage() {
           skills: data.skills,
           experience: data.experience,
           education: data.education,
+          resume_url: resumeUrl
         })
         .select()
         .single();
@@ -77,6 +135,10 @@ export default function ScreeningPage() {
           console.error("Database insert error:", candidateError);
         }
         let matchScore = 0;
+        let skillMatch: any[] = [];
+        let weaknesses: string[] = [];
+        let strengths: string[] = [];
+        let flags: string[] = [];
         
         if (selectedJob) {
           const job = jobs.find(j => j.id === selectedJob);
@@ -84,16 +146,62 @@ export default function ScreeningPage() {
             body: {
               action: "score",
               resumeText: rawText,
-              jobDescription: job?.description || "",
+              jobDescription: `${job?.title}\n${job?.description}\nRequirements: ${job?.requirements}\nSkills: ${job?.skills.join(', ')}`,
               candidateName: data.name,
               candidateSkills: data.skills
             }
           });
           
-          matchScore = scoreResponse.data?.matchScore || 0;
+          if (scoreResponse.data) {
+            matchScore = scoreResponse.data.matchScore || 0;
+            skillMatch = scoreResponse.data.skillMatch || [];
+            weaknesses = scoreResponse.data.weaknesses || [];
+            strengths = scoreResponse.data.strengths || [];
+            flags = scoreResponse.data.flags || [];
+          }
+
+          // Add candidate to context only if job selected
+          const candidate = {
+            id: crypto.randomUUID(),
+            name: data.name || 'Unknown',
+            email: data.email || '',
+            phone: data.phone || '',
+            skills: data.skills || [],
+            experience: data.experience || '',
+            education: data.education || '',
+            matchScore,
+            jobId: selectedJob,
+            resumeId: resume.id,
+            status: 'pending' as const,
+            appliedAt: new Date(),
+            skillMatch,
+            weaknesses,
+            strengths,
+            flags,
+            skillGaps: [], // Add if needed
+            experienceScore: 0, // Add defaults
+            educationScore: 0,
+            overallFit: '',
+            aiExplanation: { summary: '', factors: [], confidence: 0, recommendation: '' },
+          };
+          addCandidate(candidate);
         }
 
-        if (error) throw error;
+
+        await supabase
+          .from("resumes")
+          .insert({
+            id: resume.id,
+            file_name: file.name,
+            candidate_name: data.name,
+            email: data.email,
+            phone: data.phone,
+            skills: data.skills,
+            experience: data.experience,
+            education: data.education,
+            raw_text: rawText,
+            job_id: selectedJob !== "none" ? selectedJob : null
+          });
 
         updateResume({
           ...resume,
@@ -160,14 +268,21 @@ export default function ScreeningPage() {
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
+          const input = document.createElement("input");
+          input.type = "file";
           input.multiple = true;
-          input.accept = '.txt,.pdf,.doc,.docx';
+          input.accept = ".txt,.pdf,.doc,.docx";
+
           input.onchange = (e) => {
             const files = (e.target as HTMLInputElement).files;
-            if (files) processFiles(files);
+
+            console.log("Selected files:", files);
+
+            if (files && files.length > 0) {
+              processFiles(files);
+            }
           };
+
           input.click();
         }}
       >

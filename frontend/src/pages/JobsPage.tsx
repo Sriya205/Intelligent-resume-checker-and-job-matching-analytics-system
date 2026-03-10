@@ -1,4 +1,5 @@
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
 import { useATS } from '@/contexts/ATSContext';
 import { Job } from '@/types/ats';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,13 +15,59 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function JobsPage() {
+
   const { jobs, addJob, updateJob, deleteJob } = useATS();
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Job | null>(null);
-  const [form, setForm] = useState({ title: '', department: '', description: '', requirements: '', skills: '', status: 'active' as Job['status'] });
+
+  const [form, setForm] = useState({
+    title: '',
+    department: '',
+    description: '',
+    requirements: '',
+    skills: '',
+    status: 'active' as Job['status']
+  });
+
+  // 🔹 Load jobs from Supabase when page loads
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const fetchJobs = async () => {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("*");
+
+    if (error) {
+      console.error("Error fetching jobs:", error);
+      return;
+    }
+
+    data?.forEach((job: any) => {
+      addJob({
+        id: job.id,
+        title: job.title,
+        department: job.department || "",
+        description: job.description,
+        requirements: "",
+        skills: job.required_skills || [],
+        status: "active",
+        createdAt: new Date(job.created_at)
+      });
+    });
+  };
 
   const resetForm = () => {
-    setForm({ title: '', department: '', description: '', requirements: '', skills: '', status: 'active' });
+    setForm({
+      title: '',
+      department: '',
+      description: '',
+      requirements: '',
+      skills: '',
+      status: 'active'
+    });
     setEditing(null);
   };
 
@@ -32,13 +79,15 @@ export default function JobsPage() {
       description: job.description,
       requirements: job.requirements,
       skills: job.skills.join(', '),
-      status: job.status,
+      status: job.status
     });
     setOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+
     e.preventDefault();
+
     const jobData: Job = {
       id: editing?.id || crypto.randomUUID(),
       title: form.title,
@@ -47,34 +96,42 @@ export default function JobsPage() {
       requirements: form.requirements,
       skills: form.skills.split(',').map(s => s.trim()).filter(Boolean),
       status: form.status,
-      createdAt: editing?.createdAt || new Date(),
+      createdAt: editing?.createdAt || new Date()
     };
+
     if (editing) {
+
       await supabase
-      .from("jobs")
-      .update({
-        title: jobData.title,
-        description: jobData.description,
-        required_skills: jobData.skills,
-        experience_required: 0
-      })
-      .eq("id", editing.id);
-      
+        .from("jobs")
+        .update({
+          title: jobData.title,
+          department: jobData.department,
+          description: jobData.description,
+          required_skills: jobData.skills,
+          experience_required: 0
+        })
+        .eq("id", editing.id);
+
       updateJob(jobData);
+
     } else {
+
       const { error } = await supabase
-      .from("jobs")
-      .insert({
-        id: jobData.id,
-        title: jobData.title,
-        description: jobData.description,
-        required_skills: jobData.skills,
-        experience_required: 0
-      });
-      
+        .from("jobs")
+        .insert({
+          id: jobData.id,
+          title: jobData.title,
+          department: jobData.department,
+          description: jobData.description,
+          required_skills: jobData.skills,
+          experience_required: 0
+        });
+
       if (error) console.error(error);
+
       addJob(jobData);
     }
+
     setOpen(false);
     resetForm();
   };
@@ -86,69 +143,155 @@ export default function JobsPage() {
   };
 
   return (
+
     <div className="p-6 space-y-6">
+
       <div className="flex items-center justify-between">
+
         <div>
           <h1 className="text-2xl font-bold">Job Management</h1>
           <p className="text-muted-foreground">Create and manage job postings</p>
         </div>
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+
+        <Dialog
+          open={open}
+          onOpenChange={(v) => {
+            setOpen(v);
+            if (!v) resetForm();
+          }}
+        >
+
           <DialogTrigger asChild>
-            <Button><Plus className="w-4 h-4 mr-2" /> New Job</Button>
+            <Button>
+              <Plus className="w-4 h-4 mr-2" />
+              New Job
+            </Button>
           </DialogTrigger>
+
           <DialogContent className="max-w-lg">
+
             <DialogHeader>
-              <DialogTitle>{editing ? 'Edit Job' : 'Create New Job'}</DialogTitle>
+              <DialogTitle>
+                {editing ? 'Edit Job' : 'Create New Job'}
+              </DialogTitle>
             </DialogHeader>
+
             <form onSubmit={handleSubmit} className="space-y-4">
+
               <div className="grid grid-cols-2 gap-4">
+
                 <div className="space-y-2">
                   <Label>Title</Label>
-                  <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} required />
+                  <Input
+                    value={form.title}
+                    onChange={(e) =>
+                      setForm(f => ({ ...f, title: e.target.value }))
+                    }
+                    required
+                  />
                 </div>
+
                 <div className="space-y-2">
                   <Label>Department</Label>
-                  <Input value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} required />
+                  <Input
+                    value={form.department}
+                    onChange={(e) =>
+                      setForm(f => ({ ...f, department: e.target.value }))
+                    }
+                    required
+                  />
                 </div>
+
               </div>
+
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3} required />
+                <Textarea
+                  value={form.description}
+                  onChange={(e) =>
+                    setForm(f => ({ ...f, description: e.target.value }))
+                  }
+                  rows={3}
+                  required
+                />
               </div>
+
               <div className="space-y-2">
                 <Label>Requirements</Label>
-                <Textarea value={form.requirements} onChange={e => setForm(f => ({ ...f, requirements: e.target.value }))} rows={2} required />
+                <Textarea
+                  value={form.requirements}
+                  onChange={(e) =>
+                    setForm(f => ({ ...f, requirements: e.target.value }))
+                  }
+                  rows={2}
+                  required
+                />
               </div>
+
               <div className="space-y-2">
                 <Label>Skills (comma-separated)</Label>
-                <Input value={form.skills} onChange={e => setForm(f => ({ ...f, skills: e.target.value }))} placeholder="React, TypeScript, Node.js" required />
+                <Input
+                  value={form.skills}
+                  onChange={(e) =>
+                    setForm(f => ({ ...f, skills: e.target.value }))
+                  }
+                  placeholder="React, TypeScript, Node.js"
+                  required
+                />
               </div>
+
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as Job['status'] }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+
+                <Select
+                  value={form.status}
+                  onValueChange={(v) =>
+                    setForm(f => ({ ...f, status: v as Job['status'] }))
+                  }
+                >
+
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+
                   <SelectContent>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="closed">Closed</SelectItem>
                   </SelectContent>
+
                 </Select>
+
               </div>
-              <Button type="submit" className="w-full">{editing ? 'Update Job' : 'Create Job'}</Button>
+
+              <Button type="submit" className="w-full">
+                {editing ? 'Update Job' : 'Create Job'}
+              </Button>
+
             </form>
+
           </DialogContent>
+
         </Dialog>
+
       </div>
 
       {jobs.length === 0 ? (
+
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">No job postings yet. Create your first job to get started.</p>
+            <p className="text-muted-foreground">
+              No job postings yet. Create your first job to get started.
+            </p>
           </CardContent>
         </Card>
+
       ) : (
+
         <Card>
+
           <Table>
+
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
@@ -158,32 +301,77 @@ export default function JobsPage() {
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
+
               {jobs.map(job => (
+
                 <TableRow key={job.id}>
-                  <TableCell className="font-medium">{job.title}</TableCell>
-                  <TableCell>{job.department}</TableCell>
+
+                  <TableCell className="font-medium">
+                    {job.title}
+                  </TableCell>
+
+                  <TableCell>
+                    {job.department}
+                  </TableCell>
+
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
+
                       {job.skills.slice(0, 3).map(s => (
-                        <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
+                        <Badge key={s} variant="secondary" className="text-xs">
+                          {s}
+                        </Badge>
                       ))}
-                      {job.skills.length > 3 && <Badge variant="secondary" className="text-xs">+{job.skills.length - 3}</Badge>}
+
+                      {job.skills.length > 3 && (
+                        <Badge variant="secondary" className="text-xs">
+                          +{job.skills.length - 3}
+                        </Badge>
+                      )}
+
                     </div>
                   </TableCell>
+
                   <TableCell>
-                    <Badge className={statusColor[job.status]}>{job.status}</Badge>
+                    <Badge className={statusColor[job.status]}>
+                      {job.status}
+                    </Badge>
                   </TableCell>
+
                   <TableCell className="text-right space-x-1">
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(job)}><Pencil className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteJob(job.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(job)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteJob(job.id)}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+
                   </TableCell>
+
                 </TableRow>
+
               ))}
+
             </TableBody>
+
           </Table>
+
         </Card>
+
       )}
+
     </div>
   );
 }
