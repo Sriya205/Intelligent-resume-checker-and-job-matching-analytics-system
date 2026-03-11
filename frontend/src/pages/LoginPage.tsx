@@ -164,20 +164,7 @@ export default function LoginPage() {
                           Sign up
                         </button>
                       </p>
-                      <div className="pt-2 border-t border-border">
-                        <Button
-                          onClick={() => {
-                            demoLogin();
-                            toast({ title: 'Demo Mode', description: 'Logged in with demo credentials' });
-                            window.location.href = '/dashboard';
-                          }}
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                        >
-                          Try Demo Mode
-                        </Button>
-                      </div>
+                      
                     </>
                   )}
                   {mode !== 'login' && (

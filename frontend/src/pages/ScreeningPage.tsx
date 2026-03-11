@@ -27,31 +27,36 @@ export default function ScreeningPage() {
   
   const fetchResumes = async () => {
     const { data, error } = await supabase
-    .from("resumes")
-    .select("*");
+      .from("resumes")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Fetch resumes error:", error);
       return;
     }
 
-    data?.forEach((candidate: any) => {
-      addResume({
-        id: candidate.id,
-        fileName: "resume",
-        candidateName: candidate.name,
-        email: candidate.email,
-        phone: candidate.phone,
-        skills: candidate.skills || [],
-        experience: candidate.experience || "",
-        education: candidate.education || "",
-        rawText: "",
-        status: "parsed",
-        jobId: undefined,
-        uploadedAt: new Date(candidate.created_at)
+  
+
+      if (!data) return;
+
+      data.forEach((resume: any) => {
+        addResume({
+          id: resume.id,
+          fileName: resume.file_name,
+          candidateName: resume.candidate_name,
+          email: resume.email,
+          phone: resume.phone,
+          skills: resume.skills || [],
+          experience: resume.experience || "",
+          education: resume.education || "",
+          rawText: resume.raw_text || "",
+          status: "parsed",
+          jobId: resume.job_id || undefined,
+          uploadedAt: new Date(resume.created_at)
+        });
       });
-    });
-  };
+    };
 
   const readFileAsText = async (file: File): Promise<string> => {
     try {
@@ -103,7 +108,7 @@ export default function ScreeningPage() {
         education: '',
         rawText,
         status: 'parsing',
-        jobId: selectedJob !== "none" ? selectedJob : undefined,
+        jobId: selectedJob && selectedJob !== "none" ? selectedJob : undefined,
         uploadedAt: new Date(),
       };
       addResume(resume);
@@ -188,7 +193,7 @@ export default function ScreeningPage() {
         }
 
 
-        await supabase
+        const { data: resumeInsertData, error: resumeInsertError } = await supabase
           .from("resumes")
           .insert({
             id: resume.id,
@@ -200,8 +205,13 @@ export default function ScreeningPage() {
             experience: data.experience,
             education: data.education,
             raw_text: rawText,
+            resume_url: resumeUrl,
             job_id: selectedJob !== "none" ? selectedJob : null
-          });
+          })
+            .select();
+
+        console.log("Resume saved:", resumeInsertData);
+        console.log("Resume insert error:", resumeInsertError);
 
         updateResume({
           ...resume,
@@ -211,6 +221,7 @@ export default function ScreeningPage() {
           skills: data.skills || [],
           experience: data.experience || '',
           education: data.education || '',
+          jobId: selectedJob,
           status: 'parsed',
         });
       } catch (err) {
@@ -224,7 +235,7 @@ export default function ScreeningPage() {
 
     setUploading(false);
     toast({ title: 'Upload complete', description: `${total} resume(s) processed.` });
-  }, [addResume, updateResume, selectedJob, toast]);
+  }, [addResume, updateResume, addCandidate, selectedJob, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
