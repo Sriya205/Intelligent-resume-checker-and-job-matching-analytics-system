@@ -18,10 +18,10 @@ export default function RankingPage() {
   const [screening, setScreening] = useState(false);
 
   const filteredCandidates = selectedJob
-    ? candidates
+    ? [...candidates]
         .filter(c => c.jobId === selectedJob)
         .sort((a, b) => b.matchScore - a.matchScore)
-    : candidates.sort((a, b) => b.matchScore - a.matchScore);
+    : [...candidates].sort((a, b) => b.matchScore - a.matchScore);
 
   const screenResumes = async () => {
 
@@ -97,7 +97,7 @@ export default function RankingPage() {
 
         addCandidate(candidate);
 
-      } catch (err) {
+      } catch {
 
         const candidate: Candidate = {
           id: crypto.randomUUID(),
@@ -134,6 +134,17 @@ export default function RankingPage() {
     toast({
       title: "Ranking Complete",
       description: "Candidates have been ranked"
+    });
+
+  };
+
+  const updateStatus = (candidate: Candidate, status: "shortlisted" | "rejected") => {
+
+    candidate.status = status;
+
+    toast({
+      title: `Candidate ${status}`,
+      description: `${candidate.name} has been ${status}`
     });
 
   };
@@ -217,6 +228,21 @@ export default function RankingPage() {
                 <Badge>
                   {candidate.status}
                 </Badge>
+
+                <Button
+                  size="sm"
+                  onClick={() => updateStatus(candidate, "shortlisted")}
+                >
+                  Shortlist
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => updateStatus(candidate, "rejected")}
+                >
+                  Reject
+                </Button>
 
               </CardContent>
             </Card>
