@@ -115,15 +115,18 @@ export default function LoginPage() {
               </div>
             ) : (
               <>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+                  <input type="text" name="fakeusernameremembered" style={{ display: "none" }} />
+                  <input type="password" name="fakepasswordremembered" style={{ display: "none" }} />
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <Input
                       id="email"
-                      type="email"
+                      type="text"
                       placeholder="Enter your mail"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
+                      autoComplete="new-email"
                       required
                     />
                   </div>
@@ -132,10 +135,12 @@ export default function LoginPage() {
                       <Label htmlFor="password">Password</Label>
                       <Input
                         id="password"
+                        name="user_email"
                         type="password"
                         placeholder="Enter your password"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
+                        autoComplete="new-email"
                         required
                         minLength={6}
                       />
