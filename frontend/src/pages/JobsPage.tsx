@@ -52,7 +52,7 @@ export default function JobsPage() {
         department: job.department || "",
         description: job.description,
         requirements: "",
-        skills: job.required_skills || [],
+        skills: job.skills || [],
         status: "active",
         createdAt: new Date(job.created_at)
       });
@@ -107,8 +107,9 @@ export default function JobsPage() {
           title: jobData.title,
           department: jobData.department,
           description: jobData.description,
-          required_skills: jobData.skills,
-          experience_required: 0
+          skills: jobData.skills,
+          status: jobData.status
+
         })
         .eq("id", editing.id);
 
@@ -123,8 +124,9 @@ export default function JobsPage() {
           title: jobData.title,
           department: jobData.department,
           description: jobData.description,
-          required_skills: jobData.skills,
-          experience_required: 0
+          skills: jobData.skills,
+          status: jobData.status,
+          created_at: new Date()
         });
 
       if (error) console.error(error);

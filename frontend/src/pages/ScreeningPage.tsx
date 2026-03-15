@@ -11,7 +11,31 @@ import { Upload, FileText, CheckCircle, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker?url";
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+
+async function extractPDFText(file: File) {
+  const arrayBuffer = await file.arrayBuffer();
+
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  let text = "";
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+
+    const pageText = content.items
+      .map((item: any) => item.str)
+      .join(" ");
+
+    text += pageText + "\n";
+  }
+
+  return text;
+}
 
 export default function ScreeningPage() {
   const { resumes, addResume, updateResume, jobs, addCandidate } = useATS();
@@ -24,7 +48,7 @@ export default function ScreeningPage() {
   useEffect(() => {
     fetchResumes();
   }, []);
-  
+
   const fetchResumes = async () => {
     const { data, error } = await supabase
       .from("resumes")
@@ -36,27 +60,27 @@ export default function ScreeningPage() {
       return;
     }
 
-  
 
-      if (!data) return;
 
-      data.forEach((resume: any) => {
-        addResume({
-          id: resume.id,
-          fileName: resume.file_name,
-          candidateName: resume.candidate_name,
-          email: resume.email,
-          phone: resume.phone,
-          skills: resume.skills || [],
-          experience: resume.experience || "",
-          education: resume.education || "",
-          rawText: resume.raw_text || "",
-          status: "parsed",
-          jobId: resume.job_id || undefined,
-          uploadedAt: new Date(resume.created_at)
-        });
+    if (!data) return;
+
+    data.forEach((resume: any) => {
+      addResume({
+        id: resume.id,
+        fileName: resume.file_name,
+        candidateName: resume.candidate_name,
+        email: resume.email,
+        phone: resume.phone,
+        skills: resume.skills || [],
+        experience: resume.experience || "",
+        education: resume.education || "",
+        rawText: resume.raw_text || "",
+        status: "parsed",
+        jobId: resume.job_id || undefined,
+        uploadedAt: new Date(resume.created_at)
       });
-    };
+    });
+  };
 
   const readFileAsText = async (file: File): Promise<string> => {
     try {
@@ -69,6 +93,8 @@ export default function ScreeningPage() {
   };
 
   const processFiles = useCallback(async (files: FileList) => {
+
+    const { data: { user } } = await supabase.auth.getUser();
     setUploading(true);
     setProgress(0);
     const total = files.length;
@@ -77,9 +103,19 @@ export default function ScreeningPage() {
       const file = files[i];
       console.log("Processing file:", file.name);
       console.log("Uploading:", file.name);
-      const rawText = await readFileAsText(file);
-      console.log("Extracted text:", rawText.slice(0,200));
-      console.log("Processing file:", file.name);
+      let rawText = "";
+
+      if (file.type === "application/pdf") {
+        try {
+          rawText = await extractPDFText(file);
+        } catch (err) {
+          console.error("PDF parse failed:", err);
+          rawText = file.name;
+        }
+      } else {
+        rawText = await readFileAsText(file);
+      }
+      console.log("Extracted text:", rawText.slice(0, 200));
 
       const filePath = `${crypto.randomUUID()}-${file.name}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -90,15 +126,17 @@ export default function ScreeningPage() {
         console.error("Resume upload error:", uploadError);
       }
 
-// 🔹 GET PUBLIC URL
+      // 🔹 GET PUBLIC URL
       const { data: publicUrlData } = supabase.storage
         .from("resumes")
         .getPublicUrl(filePath);
 
       const resumeUrl = publicUrlData.publicUrl;
 
+      const resumeId = crypto.randomUUID();
+
       const resume: Resume = {
-        id: crypto.randomUUID(),
+        id: resumeId,
         fileName: file.name,
         candidateName: '',
         email: '',
@@ -115,27 +153,88 @@ export default function ScreeningPage() {
 
       // Call AI to parse resume
       try {
-        const { data, error } = await supabase.functions.invoke('analyze-resume', {
-          body: { resumeText: rawText, action: 'parse' },
-        });
-        console.log("AI Parsed Data:", data);
-        if (error) throw error;
+        let data = null;
 
-// 🔹 SAVE CANDIDATE TO DATABASE
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+
+          const response = await fetch("http://127.0.0.1:8000/parse-resume", {
+            method: "POST",
+            body: formData
+          });
+
+          const result = await response.json();
+
+          const aiResponse = await fetch("http://127.0.0.1:8000/ai-analysis", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              resume: rawText,
+              job: jobs.find(j => j.id === selectedJob)?.description || ""
+            })
+          })
+
+          const aiData = await aiResponse.json()
+
+          console.log("AI Analysis:", aiData)
+
+          console.log("FastAPI result:", result);
+
+          data = {
+            name: result?.name || file.name.replace(/\.[^.]+$/, ''),
+            email: result?.email || "",
+            phone: result?.phone || "",
+            skills: result?.skills || [],
+            experience: "",
+            education: ""
+          };
+        } catch (err) {
+          console.error("AI parsing failed:", err);
+        }
+        console.log("AI Parsed Data:", data);
+        console.log("Parsed name:", data?.name);
+        console.log("Parsed email:", data?.email);
+        console.log("Parsed skills:", data?.skills);
+
+        const { data: resumeInsertData, error: resumeInsertError } = await supabase
+          .from("resumes")
+          .insert({
+            id: crypto.randomUUID(),
+            user_id: user?.id || null,
+            file_url: resumeUrl,
+            file_name: file.name,
+            candidate_name: data.name,
+            email: data.email,
+            phone: data.phone,
+            skills: data.skills,
+            experience: data.experience,
+            education: data.education,
+            raw_text: rawText,
+            job_id: selectedJob !== "none" ? selectedJob : null
+          })
+          .select();
+
+        console.log("Resume saved:", resumeInsertData);
+        console.log("Resume insert error:", resumeInsertError);
+
+        // 🔹 SAVE CANDIDATE TO DATABASE
         const { data: candidateData, error: candidateError } = await supabase
-        
-        .from("candidates")
-        .insert({
-          name: data.name,
-          email: data.email,
-          phone: data.phone,
-          skills: data.skills,
-          experience: data.experience,
-          education: data.education,
-          resume_url: resumeUrl
-        })
-        .select()
-        .single();
+
+          .from("candidates")
+          .insert({
+            name: data.name,
+            email: data.email,
+            phone: data.phone,
+            skills: data.skills.join(", "),
+            experience: data.experience,
+            education: data.education,
+            resume_url: resumeUrl
+          })
+          .select()
+          .single();
         if (candidateError) {
           console.error("Database insert error:", candidateError);
         }
@@ -144,19 +243,19 @@ export default function ScreeningPage() {
         let weaknesses: string[] = [];
         let strengths: string[] = [];
         let flags: string[] = [];
-        
-        if (selectedJob) {
+
+        if (selectedJob && selectedJob !== "none") {
           const job = jobs.find(j => j.id === selectedJob);
           const scoreResponse = await supabase.functions.invoke('analyze-resume', {
             body: {
               action: "score",
               resumeText: rawText,
-              jobDescription: `${job?.title}\n${job?.description}\nRequirements: ${job?.requirements}\nSkills: ${job?.skills.join(', ')}`,
+              jobDescription: `${job?.title}\n${job?.description}\nRequirements: ${job?.requirements}\nSkills: ${(job?.skills || []).join(', ')}`,
               candidateName: data.name,
               candidateSkills: data.skills
             }
           });
-          
+
           if (scoreResponse.data) {
             matchScore = scoreResponse.data.matchScore || 0;
             skillMatch = scoreResponse.data.skillMatch || [];
@@ -167,8 +266,8 @@ export default function ScreeningPage() {
 
           // Add candidate to context only if job selected
           const candidate = {
-            id: crypto.randomUUID(),
-            name: data.name || 'Unknown',
+            id: resumeId,
+            name: data.name || file.name.replace(/\.[^.]+$/, ''),
             email: data.email || '',
             phone: data.phone || '',
             skills: data.skills || [],
@@ -189,44 +288,45 @@ export default function ScreeningPage() {
             overallFit: '',
             aiExplanation: { summary: '', factors: [], confidence: 0, recommendation: '' },
           };
-          addCandidate(candidate);
         }
 
 
-        const { data: resumeInsertData, error: resumeInsertError } = await supabase
-          .from("resumes")
+        await supabase
+          .from("resume_analysis")
           .insert({
-            id: resume.id,
-            file_name: file.name,
-            candidate_name: data.name,
-            email: data.email,
-            phone: data.phone,
-            skills: data.skills,
-            experience: data.experience,
-            education: data.education,
-            raw_text: rawText,
-            resume_url: resumeUrl,
-            job_id: selectedJob !== "none" ? selectedJob : null
-          })
-            .select();
+            resume_id: resumeId,
+            skills: aiData.skill_match,
+            ats_score: matchScore,
+            missing_skills: aiData.missing_skills
+          });
 
-        console.log("Resume saved:", resumeInsertData);
-        console.log("Resume insert error:", resumeInsertError);
+
+        await supabase
+          .from("matches")
+          .insert({
+            resume_id: resumeId,
+            job_id: selectedJob,
+            match_score: matchScore
+          });
 
         updateResume({
           ...resume,
-          candidateName: data.name || 'Unknown',
-          email: data.email || '',
-          phone: data.phone || '',
-          skills: data.skills || [],
-          experience: data.experience || '',
-          education: data.education || '',
+          candidateName: data.name || file.name.replace(/\.[^.]+$/, ''),
+          email: data.email,
+          phone: data.phone,
+          skills: data.skills,
+          experience: data.experience,
+          education: data.education,
           jobId: selectedJob,
-          status: 'parsed',
+          status: "parsed"
         });
       } catch (err) {
         console.error('Parse error:', err);
-        updateResume({ ...resume, status: 'parsed', candidateName: file.name.replace(/\.[^.]+$/, '') });
+        updateResume({
+          ...resume,
+          status: 'parsed',
+          candidateName: file.name.replace(/\.[^.]+$/, '')
+        });
         toast({ title: 'Parsing note', description: `Used filename for ${file.name}`, variant: 'destructive' });
       }
 
@@ -335,8 +435,12 @@ export default function ScreeningPage() {
                   <TableCell>{r.candidateName || '—'}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
-                      {r.skills.slice(0, 3).map(s => <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>)}
-                      {r.skills.length > 3 && <Badge variant="secondary" className="text-xs">+{r.skills.length - 3}</Badge>}
+                      {r.skills?.slice(0, 3).map(s => <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>)}
+                      {r.skills?.length > 3 && (
+                        <Badge variant="secondary" className="text-xs">
+                          +{r.skills.length - 3}
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{jobs.find(j => j.id === r.jobId)?.title || '—'}</TableCell>
