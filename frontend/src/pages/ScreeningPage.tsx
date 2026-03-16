@@ -14,38 +14,70 @@ export default function ScreeningPage() {
 
   const { resumes, addResume, jobs } = useATS();
 
-  const [selectedJob,setSelectedJob] = useState<string>("")
-  const [uploading,setUploading] = useState(false)
+  const [selectedJob, setSelectedJob] = useState<string>("")
+  const [uploading, setUploading] = useState(false)
 
-  const processResume = async(file:File)=>{
+  const processResume = async (file: File) => {
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      console.error("User not logged in")
+      return
+    }
 
     setUploading(true)
 
     const formData = new FormData()
-    formData.append("file",file)
+    formData.append("file", file)
 
-    const response = await fetch("http://127.0.0.1:8000/parse-resume",{
-      method:"POST",
-      body:formData
+    const response = await fetch("http://127.0.0.1:8000/parse-resume", {
+      method: "POST",
+      body: formData
     })
 
     const result = await response.json()
 
-    console.log("Parsed result:",result)
-
-    const candidateName = result?.name || file.name.replace(/\.[^.]+$/,"")
+    const candidateName = result?.name || file.name.replace(/\.[^.]+$/, "")
     const email = result?.email || ""
     const phone = result?.phone || ""
     const skills = result?.skills || []
 
+    if (!selectedJob) {
+      alert("Please select a job first")
+      setUploading(false)
+      return
+    }
+
+    const aiResponse = await fetch("http://127.0.0.1:8000/ai-analysis", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        resume: JSON.stringify(result),
+        job: jobs.find(j => j.id === selectedJob)?.description || ""
+      })
+    })
+
+    const aiData = await aiResponse.json()
+
+
+    console.log("AI Analysis:", aiData)
+
+    console.log("Parsed result:", result)
+
     const filePath = `${crypto.randomUUID()}-${file.name}`
 
-    await supabase
+    const { error: uploadError } = await supabase
       .storage
       .from("resumes")
-      .upload(filePath,file)
+      .upload(filePath, file)
 
-    const {data:urlData} = supabase
+    if (uploadError) {
+      console.error("Upload error:", uploadError)
+    }
+
+    const { data: urlData } = supabase
       .storage
       .from("resumes")
       .getPublicUrl(filePath)
@@ -54,32 +86,50 @@ export default function ScreeningPage() {
 
     const resumeId = crypto.randomUUID()
 
-    await supabase
+    const { data: resumeData, error: insertError } = await supabase
       .from("resumes")
       .insert({
-        id:resumeId,
-        file_name:file.name,
-        candidate_name:candidateName,
-        email:email,
-        phone:phone,
-        skills:skills,
-        file_url:resumeUrl,
-        job_id:selectedJob || null
+        id: resumeId,
+        user_id: user.id,
+        file_name: file.name,
+        candidate_name: candidateName,
+        email: email,
+        phone: phone,
+        skills: skills,
+        file_url: resumeUrl,
+        job_id: selectedJob || null
+      })
+      .select()
+
+    if (insertError) {
+      console.error("Resume insert error:", insertError)
+    } else {
+      console.log("Resume saved:", resumeData)
+    }
+
+    const { error: analysisError } = await supabase
+      .from("resume_analysis")
+      .insert({
+        resume_id: resumeId,
+        skills: aiData?.skill_match || [],
+        ats_score: aiData?.score || 0,
+        missing_skills: aiData?.missing_skills || []
       })
 
-    const resume:Resume = {
-      id:resumeId,
-      fileName:file.name,
-      candidateName:candidateName,
-      email:email,
-      phone:phone,
-      skills:skills,
-      experience:"",
-      education:"",
-      rawText:"",
-      status:"parsed",
-      jobId:selectedJob,
-      uploadedAt:new Date()
+
+    const resume: Resume = {
+      id: resumeId,
+      fileName: file.name,
+      candidateName: candidateName,
+      email: email,
+      phone: phone,
+      skills: skills,
+      experience: "",
+      education: "",
+      rawText: "",
+      status: "parsed",
+      jobId: selectedJob,
+      uploadedAt: new Date()
     }
 
     addResume(resume)
@@ -87,12 +137,12 @@ export default function ScreeningPage() {
     setUploading(false)
   }
 
-  const handleDrop=(e:React.DragEvent)=>{
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
 
-    const file=e.dataTransfer.files[0]
+    const file = e.dataTransfer.files[0]
 
-    if(file){
+    if (file) {
       processResume(file)
     }
   }
@@ -120,12 +170,12 @@ export default function ScreeningPage() {
         <Select value={selectedJob} onValueChange={setSelectedJob}>
 
           <SelectTrigger>
-            <SelectValue placeholder="Select Job"/>
+            <SelectValue placeholder="Select Job" />
           </SelectTrigger>
 
           <SelectContent>
 
-            {jobs.map(j=>(
+            {jobs.map(j => (
               <SelectItem key={j.id} value={j.id}>
                 {j.title}
               </SelectItem>
@@ -141,19 +191,19 @@ export default function ScreeningPage() {
 
       <Card
         className="border-2 border-dashed cursor-pointer"
-        onDragOver={(e)=>e.preventDefault()}
+        onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        onClick={()=>{
+        onClick={() => {
 
-          const input=document.createElement("input")
+          const input = document.createElement("input")
 
-          input.type="file"
-          input.accept=".pdf,.doc,.docx"
+          input.type = "file"
+          input.accept = ".pdf,.doc,.docx"
 
-          input.onchange=(e)=>{
-            const file=(e.target as HTMLInputElement).files?.[0]
+          input.onchange = (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0]
 
-            if(file){
+            if (file) {
               processResume(file)
             }
           }
@@ -164,7 +214,7 @@ export default function ScreeningPage() {
 
         <CardContent className="py-12 text-center">
 
-          <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground"/>
+          <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
 
           <p className="text-lg font-medium">
 
@@ -181,7 +231,7 @@ export default function ScreeningPage() {
 
       {/* RESUME TABLE */}
 
-      {resumes.length>0 && (
+      {resumes.length > 0 && (
 
         <Card>
 
@@ -210,12 +260,12 @@ export default function ScreeningPage() {
 
             <TableBody>
 
-              {resumes.map(r=>(
+              {resumes.map(r => (
                 <TableRow key={r.id}>
 
                   <TableCell className="flex items-center gap-2">
 
-                    <FileText className="w-4 h-4"/>
+                    <FileText className="w-4 h-4" />
 
                     {r.fileName}
 
@@ -237,7 +287,7 @@ export default function ScreeningPage() {
 
                     <div className="flex gap-1 flex-wrap">
 
-                      {r.skills?.map(s=>(
+                      {r.skills?.map(s => (
                         <Badge key={s}>
                           {s}
                         </Badge>
@@ -249,7 +299,7 @@ export default function ScreeningPage() {
 
                   <TableCell>
 
-                    {jobs.find(j=>j.id===r.jobId)?.title || "-"}
+                    {jobs.find(j => j.id === r.jobId)?.title || "-"}
 
                   </TableCell>
 
