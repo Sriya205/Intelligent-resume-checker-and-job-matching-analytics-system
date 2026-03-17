@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import '@/styles/auth.css';   
+import '@/styles/auth.css';
 // styles for global.css
 // import '@/styles/global.css';
 
@@ -81,8 +81,8 @@ export default function LoginPage() {
               {mode === 'login'
                 ? 'Enter your credentials to access the HR portal'
                 : mode === 'signup'
-                ? 'Create your HR account to get started'
-                : 'Enter your email to receive a reset link'}
+                  ? 'Create your HR account to get started'
+                  : 'Enter your email to receive a reset link'}
             </CardDescription>
           </CardHeader>
           <CardContent className="auth-card-content">
@@ -126,7 +126,9 @@ export default function LoginPage() {
                       placeholder="Enter your mail"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      autoComplete="new-email"
+                      autoComplete="off"
+                      readOnly
+                      onFocus={e => e.target.removeAttribute('readonly')}
                       required
                     />
                   </div>
@@ -140,7 +142,9 @@ export default function LoginPage() {
                         placeholder="Enter your password"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
-                        autoComplete="new-email"
+                        autoComplete="new-password"
+                        readOnly
+                        onFocus={e => e.target.removeAttribute('readonly')}
                         required
                         minLength={6}
                       />
@@ -150,10 +154,10 @@ export default function LoginPage() {
                     {submitting
                       ? 'Please wait...'
                       : mode === 'login'
-                      ? 'Sign In'
-                      : mode === 'signup'
-                      ? 'Create Account'
-                      : 'Send Reset Link'}
+                        ? 'Sign In'
+                        : mode === 'signup'
+                          ? 'Create Account'
+                          : 'Send Reset Link'}
                   </Button>
                 </form>
 
@@ -169,7 +173,7 @@ export default function LoginPage() {
                           Sign up
                         </button>
                       </p>
-                      
+
                     </>
                   )}
                   {mode !== 'login' && (

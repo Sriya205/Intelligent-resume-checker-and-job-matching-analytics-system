@@ -1,7 +1,6 @@
-import { useState } from "react";
 import { useATS } from "@/contexts/ATSContext";
 import { Resume } from "@/types/ats";
-
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +15,49 @@ export default function ScreeningPage() {
 
   const [selectedJob, setSelectedJob] = useState<string>("")
   const [uploading, setUploading] = useState(false)
+
+
+  // Supabase se resumes load karo jab page open ho
+  useEffect(() => {
+    fetchResumes();
+  }, []);
+
+  const fetchResumes = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("resumes")
+      .select("*")
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error fetching resumes:", error);
+      return;
+    }
+
+    data?.forEach((r: any) => {
+      // Duplicate avoid karo
+      const exists = resumes.some(existing => existing.id === r.id);
+      if (!exists) {
+        addResume({
+          id: r.id,
+          fileName: r.file_name,
+          candidateName: r.candidate_name,
+          email: r.email || "",
+          phone: r.phone || "",
+          skills: r.skills || [],
+          experience: "",
+          education: "",
+          rawText: "",
+          status: "parsed",
+          jobId: r.job_id || "",
+          uploadedAt: new Date(r.created_at)
+        });
+      }
+    });
+  };
+
 
   const processResume = async (file: File) => {
     const { data: { user } } = await supabase.auth.getUser()
