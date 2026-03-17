@@ -10,3 +10,4 @@ bcrypt
 python-jose
 sqlalchemy
 psycopg2
+openai
