@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Trophy, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function RankingPage() {
 
@@ -17,12 +18,15 @@ export default function RankingPage() {
   const [screening, setScreening] = useState(false);
 
   const filteredCandidates = selectedJob
-    ? [...candidates]
-        .filter(c => c.jobId === selectedJob)
-        .sort((a, b) => b.matchScore - a.matchScore)
+    ? [...candidates].filter(c => c.jobId === selectedJob).sort((a, b) => b.matchScore - a.matchScore)
     : [...candidates].sort((a, b) => b.matchScore - a.matchScore);
 
   const screenResumes = async () => {
+    console.log("All resumes:", resumes.map(r => ({
+      name: r.candidateName,
+      rawText: r.rawText?.slice(0, 50),
+      status: r.status
+    })));
 
     if (!selectedJob) {
       toast({ title: "Select Job", description: "Please select a job first", variant: "destructive" });
@@ -47,13 +51,12 @@ export default function RankingPage() {
 
       try {
 
-        // ✅ Seedha FastAPI backend call
         const response = await fetch("http://127.0.0.1:8000/ai-analysis", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resume: resume.rawText,
-            job: `${job.title} ${job.description}`,
+            job: `${job.title}\n${job.description}\nRequired Skills: ${job.skills.join(', ')}`,
             candidate_name: resume.candidateName,
             candidate_skills: resume.skills
           })
@@ -87,38 +90,44 @@ export default function RankingPage() {
           status: "pending"
         };
 
+        // ✅ React state mein add karo
         addCandidate(candidate);
+
+        // ✅ Supabase database mein bhi save karo
+        const { error: candidateError } = await supabase
+          .from("candidates")
+          .insert({
+            id: candidate.id,
+            resume_id: candidate.resumeId,
+            job_id: candidate.jobId,
+            name: candidate.name,
+            email: candidate.email,
+            match_score: candidate.matchScore,
+            skill_match: candidate.skillMatch,
+            skill_gaps: candidate.skillGaps,
+            experience_score: candidate.experienceScore,
+            education_score: candidate.educationScore,
+            overall_fit: candidate.overallFit,
+            strengths: candidate.strengths,
+            weaknesses: candidate.weaknesses,
+            flags: candidate.flags,
+            ai_explanation: candidate.aiExplanation,
+            status: candidate.status
+          });
+
+        if (candidateError) {
+          console.error("Candidate save error:", candidateError);
+        } else {
+          console.log("Candidate saved to DB:", candidate.name);
+        }
 
       } catch (err) {
-
         console.error("Screening error:", err);
-
-        // Error hone par bhi candidate add karo placeholder ke saath
-        const candidate: Candidate = {
-          id: crypto.randomUUID(),
-          resumeId: resume.id,
-          jobId: selectedJob,
-          name: resume.candidateName || "Unknown",
-          email: resume.email || "",
-          matchScore: 0,
-          skillMatch: [],
-          skillGaps: [],
-          experienceScore: 0,
-          educationScore: 0,
-          overallFit: "",
-          strengths: [],
-          weaknesses: [],
-          flags: [],
-          aiExplanation: { summary: "", factors: [], confidence: 0, recommendation: "" },
-          status: "pending"
-        };
-
-        addCandidate(candidate);
       }
     }
 
     setScreening(false);
-    toast({ title: "Ranking Complete", description: "Candidates have been ranked" });
+    toast({ title: "Ranking Complete", description: "Candidates have been ranked and saved!" });
   };
 
   const updateStatus = (candidate: Candidate, status: "shortlisted" | "rejected") => {

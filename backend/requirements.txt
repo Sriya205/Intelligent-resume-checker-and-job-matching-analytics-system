@@ -1,13 +1,7 @@
 fastapi
 uvicorn
 pdfplumber
-spacy
-sentence-transformers
-scikit-learn
 python-multipart
-passlib
-bcrypt
-python-jose
-sqlalchemy
-psycopg2
 openai
+supabase
+python-dotenv

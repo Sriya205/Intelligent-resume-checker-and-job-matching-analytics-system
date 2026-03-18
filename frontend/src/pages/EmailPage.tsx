@@ -11,6 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Mail, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { EmailRecord } from '@/types/ats';
+import emailjs from '@emailjs/browser';
+
+// ✅ Aapki EmailJS credentials
+const EMAILJS_SERVICE_ID = "service_v5u5xrr";
+const EMAILJS_TEMPLATE_ID = "template_reyrt8o";
+const EMAILJS_PUBLIC_KEY = "QQIQEHFrdEZisj6MG";
 
 export default function EmailPage() {
   const { candidates, emailTemplates, emailRecords, addEmailRecord, jobs } = useATS();
@@ -19,6 +25,7 @@ export default function EmailPage() {
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
 
   const template = emailTemplates.find(t => t.id === selectedTemplate);
 
@@ -37,35 +44,92 @@ export default function EmailPage() {
     );
   };
 
-  const sendEmails = () => {
+  const sendEmails = async () => {
     if (selectedCandidates.length === 0) {
       toast({ title: 'Select candidates', description: 'Please select at least one candidate.', variant: 'destructive' });
       return;
     }
-    selectedCandidates.forEach(cid => {
+
+    setSending(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const cid of selectedCandidates) {
       const c = candidates.find(x => x.id === cid);
-      if (!c) return;
+      if (!c) continue;
+
       const job = jobs.find(j => j.id === c.jobId);
-      const record: EmailRecord = {
-        id: crypto.randomUUID(),
-        candidateId: c.id,
-        candidateName: c.name,
-        templateType: template?.type || 'custom',
-        subject: subject.replace('{{candidateName}}', c.name).replace('{{jobTitle}}', job?.title || ''),
-        status: 'sent',
-        sentAt: new Date(),
-      };
-      addEmailRecord(record);
-    });
-    toast({ title: 'Emails sent', description: `${selectedCandidates.length} email(s) simulated successfully.` });
+
+      // Subject aur body mein placeholder replace karo
+      const finalSubject = subject
+        .replace('{{candidateName}}', c.name)
+        .replace('{{jobTitle}}', job?.title || '');
+
+      const finalBody = body
+        .replace('{{candidateName}}', c.name)
+        .replace('{{jobTitle}}', job?.title || '');
+
+      try {
+        // ✅ Real email bhejna EmailJS se
+        await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          {
+            to_email: c.email,
+            to_name: c.name,
+            subject: finalSubject,
+            message: finalBody,
+          },
+          EMAILJS_PUBLIC_KEY
+        );
+
+        successCount++;
+
+        // Record save karo
+        const record: EmailRecord = {
+          id: crypto.randomUUID(),
+          candidateId: c.id,
+          candidateName: c.name,
+          templateType: template?.type || 'custom',
+          subject: finalSubject,
+          status: 'sent',
+          sentAt: new Date(),
+        };
+        addEmailRecord(record);
+
+      } catch (err) {
+        console.error(`Email failed for ${c.name}:`, err);
+        failCount++;
+
+        const record: EmailRecord = {
+          id: crypto.randomUUID(),
+          candidateId: c.id,
+          candidateName: c.name,
+          templateType: template?.type || 'custom',
+          subject: finalSubject,
+          status: 'failed',
+          sentAt: new Date(),
+        };
+        addEmailRecord(record);
+      }
+    }
+
+    setSending(false);
     setSelectedCandidates([]);
+
+    if (successCount > 0) {
+      toast({ title: '✅ Emails Sent!', description: `${successCount} email(s) sent successfully!` });
+    }
+    if (failCount > 0) {
+      toast({ title: '❌ Some Failed', description: `${failCount} email(s) failed.`, variant: 'destructive' });
+    }
   };
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Email Automation</h1>
-        <p className="text-muted-foreground">Send templated communications to candidates (simulated)</p>
+        <p className="text-muted-foreground">Send real emails to candidates via EmailJS</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -83,15 +147,16 @@ export default function EmailPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Subject</label>
-              <Input value={subject} onChange={e => setSubject(e.target.value)} />
+              <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Email subject..." />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Body</label>
-              <Textarea value={body} onChange={e => setBody(e.target.value)} rows={8} />
+              <Textarea value={body} onChange={e => setBody(e.target.value)} rows={8} placeholder="Email body..." />
             </div>
             <p className="text-xs text-muted-foreground">Placeholders: {'{{candidateName}}'}, {'{{jobTitle}}'}</p>
-            <Button onClick={sendEmails} className="w-full">
-              <Send className="w-4 h-4 mr-2" /> Send to {selectedCandidates.length} candidate(s)
+            <Button onClick={sendEmails} className="w-full" disabled={sending}>
+              <Send className="w-4 h-4 mr-2" />
+              {sending ? "Sending..." : `Send to ${selectedCandidates.length} candidate(s)`}
             </Button>
           </CardContent>
         </Card>
@@ -124,7 +189,11 @@ export default function EmailPage() {
 
       {emailRecords.length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Mail className="w-4 h-4" /> Sent Communications</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="w-4 h-4" /> Sent Communications
+            </CardTitle>
+          </CardHeader>
           <Table>
             <TableHeader>
               <TableRow>
@@ -141,8 +210,14 @@ export default function EmailPage() {
                   <TableCell>{r.candidateName}</TableCell>
                   <TableCell className="max-w-xs truncate">{r.subject}</TableCell>
                   <TableCell><Badge variant="secondary">{r.templateType}</Badge></TableCell>
-                  <TableCell><Badge className="bg-[hsl(142,71%,45%)] text-[hsl(0,0%,100%)]">{r.status}</Badge></TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{r.sentAt.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <Badge className={r.status === 'sent' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
+                      {r.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {r.sentAt.toLocaleString()}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
