@@ -25,7 +25,7 @@ key = "sb_publishable_hQDMDFTnzRB9cbYyVVsNcA_IhVs0K5i"
 supabase = create_client(url, key)
 
 client = OpenAI(
-    api_key="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",
+    api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
 )
 
