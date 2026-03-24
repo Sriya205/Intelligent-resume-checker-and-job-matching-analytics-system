@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trophy, User, CheckCheck, XCircle, Mail, Loader2 } from 'lucide-react';
+import { Trophy, User, CheckCheck, XCircle, Mail, Loader2, Star } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -40,11 +40,13 @@ export default function RankingPage() {
 
   const clearSelection = () => setSelectedIds(new Set());
 
-  const bulkUpdateStatus = (status: 'shortlisted' | 'rejected') => {
+  const bulkUpdateStatus = (status: 'shortlisted' | 'rejected' | 'hired') => {
+    const count = selectedIds.size;
     filteredCandidates
       .filter(c => selectedIds.has(c.id))
       .forEach(c => updateCandidate({ ...c, status }));
-    toast({ title: `${selectedIds.size} candidate(s) ${status}` });
+    const label = status === 'hired' ? 'hired 🎉' : status;
+    toast({ title: `${count} candidate(s) ${label}` });
     clearSelection();
   };
 
@@ -99,7 +101,6 @@ export default function RankingPage() {
 
         if (error) throw error;
 
-        // ✅ Properly map ALL AI fields
         const candidate: Candidate = {
           id: crypto.randomUUID(),
           resumeId: resume.id,
@@ -129,7 +130,6 @@ export default function RankingPage() {
       } catch (err) {
         console.error('AI analysis failed, using fallback:', err);
 
-        // Fallback — calculate basic match from skills
         const jobSkills = job.skills.map(s => s.toLowerCase());
         const resumeSkills = resume.skills.map(s => s.toLowerCase());
         const matched = resumeSkills.filter(s => jobSkills.includes(s));
@@ -184,11 +184,11 @@ export default function RankingPage() {
   };
 
   const statusColor: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    shortlisted: 'bg-green-100 text-green-800',
-    rejected: 'bg-red-100 text-red-800',
-    interview: 'bg-blue-100 text-blue-800',
-    hired: 'bg-purple-100 text-purple-800',
+    pending:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    rejected:    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    interview:   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    hired:       'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   };
 
   return (
@@ -232,6 +232,11 @@ export default function RankingPage() {
               <CheckCheck className="w-4 h-4 mr-1" /> Shortlist All
             </Button>
             <Button size="sm" variant="outline"
+              className="border-purple-500 text-purple-600 hover:bg-purple-50"
+              onClick={() => bulkUpdateStatus('hired')}>
+              <Star className="w-4 h-4 mr-1" /> Hire All
+            </Button>
+            <Button size="sm" variant="outline"
               className="border-red-400 text-red-500 hover:bg-red-50"
               onClick={() => bulkUpdateStatus('rejected')}>
               <XCircle className="w-4 h-4 mr-1" /> Reject All
@@ -265,42 +270,86 @@ export default function RankingPage() {
 
           {filteredCandidates.map((candidate, index) => (
             <Card key={candidate.id}
-              className={selectedIds.has(candidate.id) ? 'ring-2 ring-primary border-primary' : ''}>
-              <CardContent className="flex items-center gap-4 p-4">
+              className={`transition-all ${selectedIds.has(candidate.id) ? 'ring-2 ring-primary border-primary' : ''} ${candidate.status === 'hired' ? 'border-purple-300 dark:border-purple-700 bg-purple-50/30 dark:bg-purple-900/10' : ''}`}>
+              <CardContent className="flex items-center gap-4 p-4 flex-wrap">
                 <Checkbox
                   checked={selectedIds.has(candidate.id)}
                   onCheckedChange={() => toggleOne(candidate.id)}
                 />
-                <div className="text-xl font-bold w-8 text-muted-foreground">{index + 1}</div>
+
+                {/* Rank number */}
+                <div className="text-xl font-bold w-8 text-muted-foreground shrink-0">
+                  {candidate.status === 'hired'
+                    ? <Star className="w-5 h-5 text-purple-500 fill-purple-500" />
+                    : index + 1
+                  }
+                </div>
+
                 <User className="w-5 h-5 text-muted-foreground shrink-0" />
+
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{candidate.name}</p>
+                  <p className="font-medium truncate flex items-center gap-2">
+                    {candidate.name}
+                    {candidate.status === 'hired' && (
+                      <span className="text-xs font-normal text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-full">
+                        Hired ✓
+                      </span>
+                    )}
+                  </p>
                   <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
-                  {/* Show recommendation if available */}
                   {candidate.aiExplanation.recommendation && (
                     <p className="text-xs text-muted-foreground mt-0.5">
                       AI: {candidate.aiExplanation.recommendation}
                     </p>
                   )}
                 </div>
+
+                {/* Match Score */}
                 <div className="text-right shrink-0">
                   <p className="text-xl font-bold text-primary">{candidate.matchScore}%</p>
                   <p className="text-xs text-muted-foreground">Match Score</p>
                 </div>
+
+                {/* Status Badge */}
                 <Badge className={`text-xs shrink-0 ${statusColor[candidate.status]}`}>
                   {candidate.status}
                 </Badge>
-                <div className="flex gap-2 shrink-0">
-                  <Button size="sm" variant="outline"
-                    className="text-green-600 border-green-400 hover:bg-green-50"
-                    onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
-                    Shortlist
-                  </Button>
-                  <Button size="sm" variant="outline"
-                    className="text-red-500 border-red-400 hover:bg-red-50"
-                    onClick={() => updateCandidate({ ...candidate, status: 'rejected' })}>
-                    Reject
-                  </Button>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 shrink-0 flex-wrap">
+                  {candidate.status !== 'hired' && (
+                    <>
+                      <Button size="sm" variant="outline"
+                        className="text-green-600 border-green-400 hover:bg-green-50"
+                        onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
+                        Shortlist
+                      </Button>
+                      <Button size="sm" variant="outline"
+                        className="text-purple-600 border-purple-400 hover:bg-purple-50"
+                        onClick={() => {
+                          updateCandidate({ ...candidate, status: 'hired' });
+                          toast({
+                            title: `🎉 ${candidate.name} Hired!`,
+                            description: 'Candidate status updated to Hired.',
+                          });
+                        }}>
+                        <Star className="w-3 h-3 mr-1" />
+                        Hire
+                      </Button>
+                      <Button size="sm" variant="outline"
+                        className="text-red-500 border-red-400 hover:bg-red-50"
+                        onClick={() => updateCandidate({ ...candidate, status: 'rejected' })}>
+                        Reject
+                      </Button>
+                    </>
+                  )}
+                  {candidate.status === 'hired' && (
+                    <Button size="sm" variant="outline"
+                      className="text-muted-foreground"
+                      onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
+                      Undo Hire
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
