@@ -4,6 +4,11 @@ export interface Job {
   department: string;
   description: string;
   requirements: string;
+  responsibilities: string;
+  experienceLevel: 'fresher' | '1-3 years' | '3-5 years' | 'senior';
+  salaryMin: string;
+  salaryMax: string;
+  jobType: 'full-time' | 'part-time' | 'internship' | 'remote';
   skills: string[];
   status: 'active' | 'draft' | 'closed';
   createdAt: Date;

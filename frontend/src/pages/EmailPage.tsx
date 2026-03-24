@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useATS } from '@/contexts/ATSContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,34 +8,71 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Mail, Send } from 'lucide-react';
+import { Mail, Send, Paperclip, X, FileText, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { EmailRecord } from '@/types/ats';
-import emailjs from '@emailjs/browser';
 
-// ✅ Aapki EmailJS credentials
-const EMAILJS_SERVICE_ID = "service_v5u5xrr";
-const EMAILJS_TEMPLATE_ID = "template_reyrt8o";
-const EMAILJS_PUBLIC_KEY = "QQIQEHFrdEZisj6MG";
+// ✅ Backend API URL
+const BACKEND_URL = "http://localhost:8000";
+
+interface AttachedFile {
+  name: string;
+  size: number;
+  type: string;
+  base64: string;
+}
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+};
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 export default function EmailPage() {
   const { candidates, emailTemplates, emailRecords, addEmailRecord, jobs } = useATS();
   const { toast } = useToast();
-  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [rawSubject, setRawSubject] = useState("");
+  const [rawBody, setRawBody] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const template = emailTemplates.find(t => t.id === selectedTemplate);
+  const isOfferLetterTemplate =
+    template?.type === "offer" || template?.name?.toLowerCase().includes("offer");
+
+  const previewCandidate = selectedCandidates.length > 0
+    ? candidates.find(c => c.id === selectedCandidates[0])
+    : null;
+
+  const resolvePlaceholders = (text: string, candidateId?: string) => {
+    const c = candidateId ? candidates.find(x => x.id === candidateId) : previewCandidate;
+    if (!c) return text;
+    const job = jobs.find(j => j.id === c.jobId);
+    return text
+      .replace(/\{\{candidateName\}\}/g, c.name)
+      .replace(/\{\{jobTitle\}\}/g, job?.title || "");
+  };
+
+  const previewSubject = previewCandidate ? resolvePlaceholders(rawSubject) : rawSubject;
+  const previewBody    = previewCandidate ? resolvePlaceholders(rawBody)    : rawBody;
 
   const handleTemplateChange = (id: string) => {
     setSelectedTemplate(id);
     const tmpl = emailTemplates.find(t => t.id === id);
-    if (tmpl) {
-      setSubject(tmpl.subject);
-      setBody(tmpl.body);
-    }
+    if (tmpl) { setRawSubject(tmpl.subject); setRawBody(tmpl.body); }
+    setAttachedFiles([]);
   };
 
   const toggleCandidate = (id: string) => {
@@ -44,9 +81,46 @@ export default function EmailPage() {
     );
   };
 
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsProcessingFile(true);
+    const newFiles: AttachedFile[] = [];
+
+    for (const file of Array.from(files)) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: "File Too Large", description: file.name + " — max 5MB.", variant: "destructive" });
+        continue;
+      }
+      const allowed = [
+        "application/pdf", "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/jpeg", "image/png",
+      ];
+      if (!allowed.includes(file.type)) {
+        toast({ title: "Invalid Type", description: file.name + ": Only PDF, DOC, DOCX, JPG, PNG.", variant: "destructive" });
+        continue;
+      }
+      const base64 = await fileToBase64(file);
+      newFiles.push({ name: file.name, size: file.size, type: file.type, base64 });
+    }
+
+    setAttachedFiles(prev => [...prev, ...newFiles]);
+    if (newFiles.length > 0) toast({ title: "File Attached", description: newFiles.length + " file(s) ready to send." });
+    setIsProcessingFile(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeAttachment = (index: number) =>
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+
   const sendEmails = async () => {
     if (selectedCandidates.length === 0) {
-      toast({ title: 'Select candidates', description: 'Please select at least one candidate.', variant: 'destructive' });
+      toast({ title: "Select candidates", description: "Please select at least one candidate.", variant: "destructive" });
+      return;
+    }
+    if (isOfferLetterTemplate && attachedFiles.length === 0) {
+      toast({ title: "Attachment Required", description: "Please attach the offer letter before sending.", variant: "destructive" });
       return;
     }
 
@@ -58,105 +132,206 @@ export default function EmailPage() {
       const c = candidates.find(x => x.id === cid);
       if (!c) continue;
 
-      const job = jobs.find(j => j.id === c.jobId);
-
-      // Subject aur body mein placeholder replace karo
-      const finalSubject = subject
-        .replace('{{candidateName}}', c.name)
-        .replace('{{jobTitle}}', job?.title || '');
-
-      const finalBody = body
-        .replace('{{candidateName}}', c.name)
-        .replace('{{jobTitle}}', job?.title || '');
+      const finalSubject = resolvePlaceholders(rawSubject, cid);
+      const finalBody    = resolvePlaceholders(rawBody, cid);
 
       try {
-        // ✅ Real email bhejna EmailJS se
-        await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          {
+        // ✅ Backend /send-email API call — real attachment support
+        const res = await fetch(BACKEND_URL + "/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
             to_email: c.email,
             to_name: c.name,
             subject: finalSubject,
             message: finalBody,
-          },
-          EMAILJS_PUBLIC_KEY
-        );
+            attachments: attachedFiles.map(af => ({
+              filename: af.name,
+              content: af.base64,
+              mimeType: af.type,
+            })),
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.detail || data.message || "Email send failed");
+        }
 
         successCount++;
-
-        // Record save karo
-        const record: EmailRecord = {
+        addEmailRecord({
           id: crypto.randomUUID(),
           candidateId: c.id,
           candidateName: c.name,
-          templateType: template?.type || 'custom',
+          templateType: template?.type || "custom",
           subject: finalSubject,
-          status: 'sent',
+          status: "sent",
           sentAt: new Date(),
-        };
-        addEmailRecord(record);
+        });
 
-      } catch (err) {
-        console.error(`Email failed for ${c.name}:`, err);
+      } catch (err: any) {
+        console.error("Email failed for " + c.name + ":", err);
+        toast({
+          title: "Failed: " + c.name,
+          description: err?.message || "Unknown error — check console (F12)",
+          variant: "destructive",
+        });
         failCount++;
-
-        const record: EmailRecord = {
+        addEmailRecord({
           id: crypto.randomUUID(),
           candidateId: c.id,
           candidateName: c.name,
-          templateType: template?.type || 'custom',
+          templateType: template?.type || "custom",
           subject: finalSubject,
-          status: 'failed',
+          status: "failed",
           sentAt: new Date(),
-        };
-        addEmailRecord(record);
+        });
       }
     }
 
     setSending(false);
     setSelectedCandidates([]);
-
-    if (successCount > 0) {
-      toast({ title: '✅ Emails Sent!', description: `${successCount} email(s) sent successfully!` });
-    }
-    if (failCount > 0) {
-      toast({ title: '❌ Some Failed', description: `${failCount} email(s) failed.`, variant: 'destructive' });
-    }
+    if (successCount > 0) toast({ title: "Emails Sent!", description: successCount + " email(s) sent with attachment!" });
+    if (failCount > 0) toast({ title: "Some Failed", description: failCount + " email(s) failed.", variant: "destructive" });
   };
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Email Automation</h1>
-        <p className="text-muted-foreground">Send real emails to candidates via EmailJS</p>
+        <p className="text-muted-foreground">Send emails with real attachments to candidates</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-base">Compose Email</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              Compose Email
+              {previewCandidate && (
+                <Badge variant="outline" className="text-xs font-normal text-blue-600 border-blue-300 bg-blue-50">
+                  Preview: {previewCandidate.name}
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Template</label>
               <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
                 <SelectTrigger><SelectValue placeholder="Choose template" /></SelectTrigger>
                 <SelectContent>
-                  {emailTemplates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  {emailTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Subject</label>
-              <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Email subject..." />
+              <Input
+                value={previewSubject}
+                onChange={e => {
+                  if (previewCandidate) {
+                    const job = jobs.find(j => j.id === previewCandidate.jobId);
+                    setRawSubject(
+                      e.target.value
+                        .replace(new RegExp(previewCandidate.name, "g"), "{{candidateName}}")
+                        .replace(new RegExp(job?.title || "\x00", "g"), "{{jobTitle}}")
+                    );
+                  } else { setRawSubject(e.target.value); }
+                }}
+                placeholder="Email subject..."
+              />
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Body</label>
-              <Textarea value={body} onChange={e => setBody(e.target.value)} rows={8} placeholder="Email body..." />
+              <Textarea
+                value={previewBody}
+                onChange={e => {
+                  if (previewCandidate) {
+                    const job = jobs.find(j => j.id === previewCandidate.jobId);
+                    setRawBody(
+                      e.target.value
+                        .replace(new RegExp(previewCandidate.name, "g"), "{{candidateName}}")
+                        .replace(new RegExp(job?.title || "\x00", "g"), "{{jobTitle}}")
+                    );
+                  } else { setRawBody(e.target.value); }
+                }}
+                rows={8}
+                placeholder="Email body..."
+              />
             </div>
-            <p className="text-xs text-muted-foreground">Placeholders: {'{{candidateName}}'}, {'{{jobTitle}}'}</p>
-            <Button onClick={sendEmails} className="w-full" disabled={sending}>
+
+            {previewCandidate
+              ? <p className="text-xs text-blue-500">Live preview for <strong>{previewCandidate.name}</strong>. Each candidate gets their own filled email on send.</p>
+              : <p className="text-xs text-muted-foreground">Select a candidate to see live preview with their details.</p>
+            }
+
+            {/* Attachment — Sirf Offer Letter ke liye */}
+            {isOfferLetterTemplate && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5" />
+                    Attachments
+                    <Badge variant="destructive" className="text-xs ml-1">Required</Badge>
+                  </label>
+                  <Button
+                    type="button" variant="outline" size="sm" className="h-7 text-xs"
+                    disabled={isProcessingFile}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="w-3 h-3 mr-1" />
+                    {isProcessingFile ? "Processing..." : "Attach File"}
+                  </Button>
+                </div>
+
+                <input
+                  ref={fileInputRef} type="file" multiple
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  className="hidden" onChange={handleFileAttach}
+                />
+
+                {attachedFiles.length > 0 ? (
+                  <div className="space-y-1.5 rounded-md border p-2 bg-muted/30">
+                    {attachedFiles.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between gap-2 bg-background rounded px-2 py-1.5 border">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                          <span className="truncate text-xs font-medium">{file.name}</span>
+                          <span className="text-xs text-muted-foreground flex-shrink-0">({formatFileSize(file.size)})</span>
+                        </div>
+                        <Button
+                          type="button" variant="ghost" size="sm"
+                          className="h-5 w-5 p-0 flex-shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => removeAttachment(index)}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className="border border-dashed rounded-md p-3 text-center cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <p className="text-xs text-muted-foreground">Click to attach PDF, DOC, DOCX (max 5MB each)</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button onClick={sendEmails} className="w-full" disabled={sending || isProcessingFile}>
               <Send className="w-4 h-4 mr-2" />
-              {sending ? "Sending..." : `Send to ${selectedCandidates.length} candidate(s)`}
+              {sending
+                ? "Sending..."
+                : "Send to " + selectedCandidates.length + " candidate(s)" + (attachedFiles.length > 0 ? " (" + attachedFiles.length + " file attached)" : "")
+              }
             </Button>
           </CardContent>
         </Card>
@@ -211,13 +386,11 @@ export default function EmailPage() {
                   <TableCell className="max-w-xs truncate">{r.subject}</TableCell>
                   <TableCell><Badge variant="secondary">{r.templateType}</Badge></TableCell>
                   <TableCell>
-                    <Badge className={r.status === 'sent' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
+                    <Badge className={r.status === "sent" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
                       {r.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {r.sentAt.toLocaleString()}
-                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{r.sentAt.toLocaleString()}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

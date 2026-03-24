@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Job, Resume, Candidate, EmailRecord, EmailTemplate, ActivityItem } from '@/types/ats';
 
 const defaultTemplates: EmailTemplate[] = [
@@ -32,6 +32,34 @@ const defaultTemplates: EmailTemplate[] = [
   },
 ];
 
+// Helper: localStorage se data load karo, parse karo dates bhi
+function loadFromStorage<T>(key: string, fallback: T, reviver?: (k: string, v: any) => any): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw, reviver);
+  } catch {
+    return fallback;
+  }
+}
+
+// Date fields ko string se Date object mein convert karo
+function dateReviver(_key: string, value: any) {
+  if (typeof value === 'string') {
+    const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value);
+    if (iso) return new Date(value);
+  }
+  return value;
+}
+
+function saveToStorage<T>(key: string, value: T) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // storage full ya unavailable ho toh silently fail
+  }
+}
+
 interface ATSContextType {
   jobs: Job[];
   resumes: Resume[];
@@ -53,12 +81,35 @@ interface ATSContextType {
 const ATSContext = createContext<ATSContextType | undefined>(undefined);
 
 export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [resumes, setResumes] = useState<Resume[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [emailRecords, setEmailRecords] = useState<EmailRecord[]>([]);
+
+  const [jobs, setJobs] = useState<Job[]>(() =>
+    loadFromStorage<Job[]>('ats_jobs', [], dateReviver)
+  );
+
+  const [resumes, setResumes] = useState<Resume[]>(() =>
+    loadFromStorage<Resume[]>('ats_resumes', [], dateReviver)
+  );
+
+  const [candidates, setCandidates] = useState<Candidate[]>(() =>
+    loadFromStorage<Candidate[]>('ats_candidates', [], dateReviver)
+  );
+
+  const [emailRecords, setEmailRecords] = useState<EmailRecord[]>(() =>
+    loadFromStorage<EmailRecord[]>('ats_email_records', [], dateReviver)
+  );
+
   const [emailTemplates] = useState<EmailTemplate[]>(defaultTemplates);
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+
+  const [activities, setActivities] = useState<ActivityItem[]>(() =>
+    loadFromStorage<ActivityItem[]>('ats_activities', [], dateReviver)
+  );
+
+  // Jab bhi state change ho, localStorage update karo
+  useEffect(() => { saveToStorage('ats_jobs', jobs); }, [jobs]);
+  useEffect(() => { saveToStorage('ats_resumes', resumes); }, [resumes]);
+  useEffect(() => { saveToStorage('ats_candidates', candidates); }, [candidates]);
+  useEffect(() => { saveToStorage('ats_email_records', emailRecords); }, [emailRecords]);
+  useEffect(() => { saveToStorage('ats_activities', activities); }, [activities]);
 
   const addActivity = useCallback((activity: Omit<ActivityItem, 'id' | 'timestamp'>) => {
     setActivities(prev => [{
@@ -69,7 +120,11 @@ export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addJob = useCallback((job: Job) => {
-    setJobs(prev => [...prev, job]);
+    setJobs(prev => {
+      // duplicate avoid karo (Supabase se fetch karne pe duplicate ho sakta tha)
+      if (prev.find(j => j.id === job.id)) return prev;
+      return [...prev, job];
+    });
     addActivity({ type: 'job_created', message: `New job posted: ${job.title}` });
   }, [addActivity]);
 
@@ -82,7 +137,10 @@ export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addResume = useCallback((resume: Resume) => {
-    setResumes(prev => [...prev, resume]);
+    setResumes(prev => {
+      if (prev.find(r => r.id === resume.id)) return prev;
+      return [...prev, resume];
+    });
     addActivity({ type: 'resume_uploaded', message: `Resume uploaded: ${resume.fileName}` });
   }, [addActivity]);
 
@@ -91,8 +149,14 @@ export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addCandidate = useCallback((candidate: Candidate) => {
-    setCandidates(prev => [...prev, candidate]);
-    addActivity({ type: 'candidate_screened', message: `Candidate screened: ${candidate.name} (${candidate.matchScore}% match)` });
+    setCandidates(prev => {
+      if (prev.find(c => c.id === candidate.id)) return prev;
+      return [...prev, candidate];
+    });
+    addActivity({
+      type: 'candidate_screened',
+      message: `Candidate screened: ${candidate.name} (${candidate.matchScore}% match)`,
+    });
   }, [addActivity]);
 
   const updateCandidate = useCallback((candidate: Candidate) => {
@@ -107,8 +171,10 @@ export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <ATSContext.Provider value={{
       jobs, resumes, candidates, emailRecords, emailTemplates, activities,
-      addJob, updateJob, deleteJob, addResume, updateResume,
-      addCandidate, updateCandidate, addEmailRecord, addActivity,
+      addJob, updateJob, deleteJob,
+      addResume, updateResume,
+      addCandidate, updateCandidate,
+      addEmailRecord, addActivity,
     }}>
       {children}
     </ATSContext.Provider>

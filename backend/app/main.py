@@ -1,7 +1,15 @@
 import re
+import base64
 import pdfplumber
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
 import io
 import os
 import json
@@ -9,14 +17,15 @@ from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
 
-load_dotenv()
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 url = "https://nfkypjunrwaoezrukusp.supabase.co"
 key = "sb_publishable_hQDMDFTnzRB9cbYyVVsNcA_IhVs0K5i"
 supabase = create_client(url, key)
 
 client = OpenAI(
-    api_key=os.environ.get("GROQ_API_KEY"),
+    api_key="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",
     base_url="https://api.groq.com/openai/v1"
 )
 
@@ -30,6 +39,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ Gmail credentials — .env mein daalo ya yahan directly likho
+GMAIL_USER = os.getenv("GMAIL_USER", "your_gmail@gmail.com")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "your_app_password_here")
+
 
 def clean_json(raw: str) -> dict:
     raw = raw.strip()
@@ -37,6 +50,60 @@ def clean_json(raw: str) -> dict:
         raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
     return json.loads(raw)
 
+
+# ─── Email Models ────────────────────────────────────────────────────────────
+
+class AttachmentModel(BaseModel):
+    filename: str
+    content: str   # base64 encoded
+    mimeType: str
+
+class SendEmailRequest(BaseModel):
+    to_email: str
+    to_name: str
+    subject: str
+    message: str
+    attachments: Optional[List[AttachmentModel]] = []
+
+
+# ─── Send Email Route ─────────────────────────────────────────────────────────
+
+@app.post("/send-email")
+async def send_email(data: SendEmailRequest):
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = f"TalentAI HR <{GMAIL_USER}>"
+        msg["To"] = data.to_email
+        msg["Subject"] = data.subject
+
+        # Plain text body — sirf ek baar
+        msg.attach(MIMEText(data.message, "plain"))
+
+        # Real attachments add karo
+        for attachment in data.attachments:
+            file_data = base64.b64decode(attachment.content)
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(file_data)
+            encoders.encode_base64(part)
+            part.add_header(
+                "Content-Disposition",
+                f"attachment; filename={attachment.filename}"
+            )
+            msg.attach(part)
+
+        # Gmail SMTP se bhejo
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.sendmail(GMAIL_USER, data.to_email, msg.as_string())
+
+        return {"success": True, "message": f"Email sent to {data.to_email}"}
+
+    except Exception as e:
+        print(f"EMAIL ERROR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Existing Routes ──────────────────────────────────────────────────────────
 
 @app.post("/parse-resume")
 async def parse_resume(file: UploadFile = File(...)):
@@ -145,4 +212,3 @@ async def parse_resume_text(data: dict):
     except Exception as e:
         print(f"PARSE TEXT ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
