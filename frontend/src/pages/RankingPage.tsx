@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { useATS } from '@/contexts/ATSContext';
-import { Candidate } from '@/types/ats';
+import { Candidate, Resume } from '@/types/ats';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trophy, User, CheckCheck, XCircle, Mail, Loader2, Star } from 'lucide-react';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  Trophy, User, CheckCheck, XCircle, Mail, Loader2,
+  FileText, X, Star, AlertTriangle, TrendingUp,
+  Briefcase, GraduationCap, Phone, AtSign, Zap,
+  ExternalLink, UserCheck
+} from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,6 +23,9 @@ export default function RankingPage() {
   const [selectedJob, setSelectedJob] = useState<string>('');
   const [screening, setScreening] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [viewingResume, setViewingResume] = useState<{ candidate: Candidate; resume: Resume | undefined } | null>(null);
+  const [loadingFileUrl, setLoadingFileUrl] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   const filteredCandidates = selectedJob
     ? [...candidates].filter(c => c.jobId === selectedJob).sort((a, b) => b.matchScore - a.matchScore)
@@ -41,12 +50,10 @@ export default function RankingPage() {
   const clearSelection = () => setSelectedIds(new Set());
 
   const bulkUpdateStatus = (status: 'shortlisted' | 'rejected' | 'hired') => {
-    const count = selectedIds.size;
     filteredCandidates
       .filter(c => selectedIds.has(c.id))
       .forEach(c => updateCandidate({ ...c, status }));
-    const label = status === 'hired' ? 'hired 🎉' : status;
-    toast({ title: `${count} candidate(s) ${label}` });
+    toast({ title: `${selectedIds.size} candidate(s) marked as ${status}` });
     clearSelection();
   };
 
@@ -67,6 +74,35 @@ export default function RankingPage() {
       });
     toast({ title: 'Emails sent!', description: `Sent to ${selectedIds.size} candidate(s).` });
     clearSelection();
+  };
+
+  const openResumeView = async (candidate: Candidate) => {
+    const resume = resumes.find(r => r.id === candidate.resumeId);
+    setViewingResume({ candidate, resume });
+    setFileUrl(null);
+
+    if (resume) {
+      setLoadingFileUrl(true);
+      try {
+        const { data, error } = await supabase
+          .from('resumes')
+          .select('file_url')
+          .eq('id', resume.id)
+          .single();
+        if (!error && data?.file_url) {
+          setFileUrl(data.file_url);
+        }
+      } catch (e) {
+        console.error('Could not fetch file URL:', e);
+      } finally {
+        setLoadingFileUrl(false);
+      }
+    }
+  };
+
+  const closeModal = () => {
+    setViewingResume(null);
+    setFileUrl(null);
   };
 
   const screenResumes = async () => {
@@ -98,7 +134,6 @@ export default function RankingPage() {
             candidateSkills: resume.skills,
           },
         });
-
         if (error) throw error;
 
         const candidate: Candidate = {
@@ -124,7 +159,6 @@ export default function RankingPage() {
           },
           status: 'pending',
         };
-
         addCandidate(candidate);
 
       } catch (err) {
@@ -143,10 +177,7 @@ export default function RankingPage() {
           matched: resumeSkills.includes(skill.toLowerCase()),
           proficiency: resumeSkills.includes(skill.toLowerCase()) ? 75 : 0,
         }));
-
-        const missingSkills = job.skills.filter(
-          s => !resumeSkills.includes(s.toLowerCase())
-        );
+        const missingSkills = job.skills.filter(s => !resumeSkills.includes(s.toLowerCase()));
 
         const candidate: Candidate = {
           id: crypto.randomUUID(),
@@ -174,7 +205,6 @@ export default function RankingPage() {
           },
           status: 'pending',
         };
-
         addCandidate(candidate);
       }
     }
@@ -183,17 +213,33 @@ export default function RankingPage() {
     toast({ title: 'Ranking Complete', description: 'Candidates have been ranked' });
   };
 
-  const statusColor: Record<string, string> = {
-    pending:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-    shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-    rejected:    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-    interview:   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-    hired:       'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+  const statusConfig: Record<string, { bg: string; label: string }> = {
+    pending:     { bg: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', label: 'Pending' },
+    shortlisted: { bg: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',    label: 'Shortlisted' },
+    rejected:    { bg: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',            label: 'Rejected' },
+    interview:   { bg: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',        label: 'Interview' },
+    hired:       { bg: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',label: 'Hired' },
   };
+
+  const getScoreColor = (score: number) =>
+    score >= 80 ? 'text-green-600 dark:text-green-400' :
+    score >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+    'text-red-500 dark:text-red-400';
+
+  const getRankBadge = (index: number) => {
+    if (index === 0) return { bg: 'bg-yellow-400', color: '#7a5700' };
+    if (index === 1) return { bg: 'bg-slate-300',  color: '#3a4050' };
+    if (index === 2) return { bg: 'bg-amber-600',  color: '#fff' };
+    return null;
+  };
+
+  const isPdf = (url: string) =>
+    url.toLowerCase().includes('.pdf') || url.toLowerCase().includes('pdf');
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Candidate Ranking</h1>
@@ -219,7 +265,7 @@ export default function RankingPage() {
         </div>
       </div>
 
-      {/* Bulk Action Bar */}
+      {/* ── Bulk Action Bar ── */}
       {someSelected && (
         <div className="flex items-center gap-3 p-3 bg-primary/10 border border-primary/20 rounded-lg flex-wrap">
           <span className="text-sm font-medium text-primary">
@@ -234,7 +280,7 @@ export default function RankingPage() {
             <Button size="sm" variant="outline"
               className="border-purple-500 text-purple-600 hover:bg-purple-50"
               onClick={() => bulkUpdateStatus('hired')}>
-              <Star className="w-4 h-4 mr-1" /> Hire All
+              <UserCheck className="w-4 h-4 mr-1" /> Hire All
             </Button>
             <Button size="sm" variant="outline"
               className="border-red-400 text-red-500 hover:bg-red-50"
@@ -251,7 +297,7 @@ export default function RankingPage() {
         </div>
       )}
 
-      {/* Candidate List */}
+      {/* ── Candidate List ── */}
       {filteredCandidates.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
@@ -260,7 +306,6 @@ export default function RankingPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {/* Select All */}
           <div className="flex items-center gap-3 px-4 py-2 bg-muted/50 rounded-lg">
             <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
             <span className="text-sm text-muted-foreground">
@@ -268,94 +313,455 @@ export default function RankingPage() {
             </span>
           </div>
 
-          {filteredCandidates.map((candidate, index) => (
-            <Card key={candidate.id}
-              className={`transition-all ${selectedIds.has(candidate.id) ? 'ring-2 ring-primary border-primary' : ''} ${candidate.status === 'hired' ? 'border-purple-300 dark:border-purple-700 bg-purple-50/30 dark:bg-purple-900/10' : ''}`}>
-              <CardContent className="flex items-center gap-4 p-4 flex-wrap">
-                <Checkbox
-                  checked={selectedIds.has(candidate.id)}
-                  onCheckedChange={() => toggleOne(candidate.id)}
-                />
+          {filteredCandidates.map((candidate, index) => {
+            const rankBadge = getRankBadge(index);
+            const sc = statusConfig[candidate.status] || statusConfig.pending;
+            return (
+              <Card key={candidate.id}
+                className={`transition-all ${selectedIds.has(candidate.id) ? 'ring-2 ring-primary border-primary' : ''}`}>
+                <CardContent className="flex items-center gap-4 p-4 flex-wrap">
+                  <Checkbox
+                    checked={selectedIds.has(candidate.id)}
+                    onCheckedChange={() => toggleOne(candidate.id)}
+                  />
 
-                {/* Rank number */}
-                <div className="text-xl font-bold w-8 text-muted-foreground shrink-0">
-                  {candidate.status === 'hired'
-                    ? <Star className="w-5 h-5 text-purple-500 fill-purple-500" />
-                    : index + 1
-                  }
-                </div>
-
-                <User className="w-5 h-5 text-muted-foreground shrink-0" />
-
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate flex items-center gap-2">
-                    {candidate.name}
-                    {candidate.status === 'hired' && (
-                      <span className="text-xs font-normal text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-full">
-                        Hired ✓
+                  {/* Rank */}
+                  <div className="flex items-center justify-center w-8 shrink-0">
+                    {rankBadge ? (
+                      <span
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${rankBadge.bg}`}
+                        style={{ color: rankBadge.color }}
+                      >
+                        {index + 1}
                       </span>
+                    ) : (
+                      <span className="text-lg font-bold text-muted-foreground">{index + 1}</span>
                     )}
-                  </p>
-                  <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
-                  {candidate.aiExplanation.recommendation && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      AI: {candidate.aiExplanation.recommendation}
+                  </div>
+
+                  <User className="w-5 h-5 text-muted-foreground shrink-0" />
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{candidate.name}</p>
+                    <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
+                    {candidate.aiExplanation.recommendation && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        AI: <span className="font-medium">{candidate.aiExplanation.recommendation}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <p className={`text-xl font-bold ${getScoreColor(candidate.matchScore)}`}>
+                      {candidate.matchScore}%
                     </p>
-                  )}
-                </div>
+                    <p className="text-xs text-muted-foreground">Match</p>
+                  </div>
 
-                {/* Match Score */}
-                <div className="text-right shrink-0">
-                  <p className="text-xl font-bold text-primary">{candidate.matchScore}%</p>
-                  <p className="text-xs text-muted-foreground">Match Score</p>
-                </div>
+                  <Badge className={`text-xs shrink-0 ${sc.bg}`}>{sc.label}</Badge>
 
-                {/* Status Badge */}
-                <Badge className={`text-xs shrink-0 ${statusColor[candidate.status]}`}>
-                  {candidate.status}
-                </Badge>
-
-                {/* Action Buttons */}
-                <div className="flex gap-2 shrink-0 flex-wrap">
-                  {candidate.status !== 'hired' && (
-                    <>
-                      <Button size="sm" variant="outline"
-                        className="text-green-600 border-green-400 hover:bg-green-50"
-                        onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
-                        Shortlist
-                      </Button>
-                      <Button size="sm" variant="outline"
-                        className="text-purple-600 border-purple-400 hover:bg-purple-50"
-                        onClick={() => {
-                          updateCandidate({ ...candidate, status: 'hired' });
-                          toast({
-                            title: `🎉 ${candidate.name} Hired!`,
-                            description: 'Candidate status updated to Hired.',
-                          });
-                        }}>
-                        <Star className="w-3 h-3 mr-1" />
-                        Hire
-                      </Button>
-                      <Button size="sm" variant="outline"
-                        className="text-red-500 border-red-400 hover:bg-red-50"
-                        onClick={() => updateCandidate({ ...candidate, status: 'rejected' })}>
-                        Reject
-                      </Button>
-                    </>
-                  )}
-                  {candidate.status === 'hired' && (
+                  <div className="flex gap-2 shrink-0 flex-wrap">
                     <Button size="sm" variant="outline"
-                      className="text-muted-foreground"
-                      onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
-                      Undo Hire
+                      className="text-primary border-primary/40 hover:bg-primary/5"
+                      onClick={() => openResumeView(candidate)}>
+                      <FileText className="w-3.5 h-3.5 mr-1" /> Resume
                     </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    <Button size="sm" variant="outline"
+                      className="text-green-600 border-green-400 hover:bg-green-50"
+                      onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
+                      Shortlist
+                    </Button>
+                    <Button size="sm" variant="outline"
+                      className="text-purple-600 border-purple-400 hover:bg-purple-50"
+                      onClick={() => updateCandidate({ ...candidate, status: 'hired' })}>
+                      Hire
+                    </Button>
+                    <Button size="sm" variant="outline"
+                      className="text-red-500 border-red-400 hover:bg-red-50"
+                      onClick={() => updateCandidate({ ...candidate, status: 'rejected' })}>
+                      Reject
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      {/* ── Resume View Modal ── */}
+      <Dialog open={!!viewingResume} onOpenChange={open => { if (!open) closeModal(); }}>
+        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0">
+          {viewingResume && (() => {
+            const { candidate, resume } = viewingResume;
+            const job = jobs.find(j => j.id === candidate.jobId);
+            const sc = statusConfig[candidate.status] || statusConfig.pending;
+
+            return (
+              <>
+                {/* ── Banner ── */}
+                <div className="relative bg-gradient-to-br from-primary to-primary/70 text-primary-foreground px-6 pt-6 pb-8 rounded-t-lg">
+                  <button
+                    onClick={closeModal}
+                    className="absolute top-4 right-4 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shrink-0 text-2xl font-bold">
+                      {candidate.name.charAt(0).toUpperCase()}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-xl font-bold leading-tight">{candidate.name}</h2>
+                      <div className="flex flex-wrap gap-3 mt-1.5 text-sm text-primary-foreground/80">
+                        {candidate.email && (
+                          <span className="flex items-center gap-1">
+                            <AtSign className="w-3.5 h-3.5" />{candidate.email}
+                          </span>
+                        )}
+                        {resume?.phone && (
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5" />{resume.phone}
+                          </span>
+                        )}
+                      </div>
+                      {job && (
+                        <div className="flex items-center gap-1.5 mt-2 text-sm">
+                          <Briefcase className="w-3.5 h-3.5 text-primary-foreground/70" />
+                          <span className="text-primary-foreground/80">Applied for</span>
+                          <span className="font-medium">{job.title}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 text-center bg-white/20 rounded-xl px-4 py-2">
+                      <p className="text-2xl font-bold leading-none">{candidate.matchScore}%</p>
+                      <p className="text-xs text-primary-foreground/70 mt-0.5">match</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    <span className="px-3 py-1 rounded-full bg-white/15 text-xs font-medium">
+                      {sc.label}
+                    </span>
+                    {candidate.aiExplanation.recommendation && (
+                      <span className="px-3 py-1 rounded-full bg-white/15 text-xs font-medium">
+                        AI: {candidate.aiExplanation.recommendation}
+                      </span>
+                    )}
+                    {candidate.overallFit && (
+                      <span className="px-3 py-1 rounded-full bg-white/15 text-xs font-medium">
+                        {candidate.overallFit} Fit
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Body ── */}
+                <div className="p-6 space-y-6">
+
+                  {/* ── RESUME FILE VIEWER ── */}
+                  <div className="border border-border rounded-xl overflow-hidden">
+                    {/* File header bar */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-muted/60 border-b border-border">
+                      <div className="flex items-center gap-2.5">
+                        <FileText className="w-5 h-5 text-primary shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold truncate max-w-[220px]">
+                            {resume?.fileName || 'Resume File'}
+                          </p>
+                          {resume?.uploadedAt && (
+                            <p className="text-xs text-muted-foreground">
+                              Uploaded {new Date(resume.uploadedAt).toLocaleDateString('en-IN', {
+                                day: 'numeric', month: 'short', year: 'numeric'
+                              })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {loadingFileUrl && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+                        {fileUrl && (
+                          <a
+                            href={fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> Open File
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* File preview area */}
+                    {loadingFileUrl ? (
+                      <div className="flex items-center justify-center py-14 bg-muted/20">
+                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : fileUrl && isPdf(fileUrl) ? (
+                      /* PDF inline preview */
+                      <div style={{ height: '460px' }} className="w-full bg-muted/20">
+                        <iframe
+                          src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                          className="w-full h-full border-0"
+                          title={`Resume — ${candidate.name}`}
+                        />
+                      </div>
+                    ) : fileUrl ? (
+                      /* DOC / other — cannot inline preview */
+                      <div className="flex flex-col items-center justify-center py-12 gap-3 bg-muted/20 text-center px-4">
+                        <FileText className="w-12 h-12 text-muted-foreground/40" />
+                        <p className="text-sm text-muted-foreground">
+                          This file type ({resume?.fileName?.split('.').pop()?.toUpperCase() || 'DOC'}) cannot be previewed in the browser.
+                        </p>
+                        <a
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" /> Download & View Resume
+                        </a>
+                      </div>
+                    ) : resume?.rawText ? (
+                      /* Fallback: show parsed raw text */
+                      <div className="p-4 max-h-72 overflow-y-auto bg-muted/10">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+                          Parsed Resume Content
+                        </p>
+                        <pre className="text-xs text-foreground/80 whitespace-pre-wrap font-mono leading-relaxed">
+                          {resume.rawText}
+                        </pre>
+                      </div>
+                    ) : (
+                      /* Nothing available */
+                      <div className="flex flex-col items-center justify-center py-12 gap-2 bg-muted/20 text-center px-4">
+                        <FileText className="w-10 h-10 text-muted-foreground/30" />
+                        <p className="text-sm text-muted-foreground">
+                          Resume file is not stored or accessible.
+                        </p>
+                        <p className="text-xs text-muted-foreground/60">
+                          Parsed details are shown below.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick score stats */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: 'Experience',    value: candidate.experienceScore,          icon: Briefcase },
+                      { label: 'Education',     value: candidate.educationScore,           icon: GraduationCap },
+                      { label: 'AI Confidence', value: candidate.aiExplanation.confidence, icon: Zap },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div key={label} className="bg-muted/50 rounded-lg p-3 text-center">
+                        <Icon className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+                        <p className={`text-lg font-bold ${getScoreColor(value)}`}>{value}%</p>
+                        <p className="text-xs text-muted-foreground">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* AI Summary */}
+                  {candidate.aiExplanation.summary && (
+                    <div className="bg-muted/40 border border-border rounded-lg p-4">
+                      <h3 className="text-sm font-semibold flex items-center gap-2 mb-2">
+                        <Zap className="w-4 h-4 text-primary" /> AI Summary
+                      </h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {candidate.aiExplanation.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Skills (color-coded matched vs unmatched) */}
+                  {resume?.skills && resume.skills.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2.5">Skills</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {resume.skills.map(skill => {
+                          const sm = candidate.skillMatch.find(
+                            s => s.skill.toLowerCase() === skill.toLowerCase()
+                          );
+                          const matched = sm?.matched ?? false;
+                          return (
+                            <span key={skill}
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                                matched
+                                  ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/20 dark:border-green-700 dark:text-green-400'
+                                  : 'bg-muted border-border text-muted-foreground'
+                              }`}>
+                              {matched && <span className="mr-1">✓</span>}
+                              {skill}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Skill Match Breakdown */}
+                  {candidate.skillMatch.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-primary" /> Skill Match Breakdown
+                      </h3>
+                      <div className="space-y-2.5">
+                        {candidate.skillMatch.map(sm => (
+                          <div key={sm.skill}>
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-sm flex items-center gap-1.5">
+                                {sm.skill}
+                                {sm.required && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                    Required
+                                  </span>
+                                )}
+                              </span>
+                              <span className={`text-xs font-medium ${sm.matched ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                                {sm.proficiency}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${sm.matched ? 'bg-green-500' : 'bg-red-400'}`}
+                                style={{ width: `${sm.proficiency}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Skill Gaps */}
+                  {candidate.skillGaps.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2.5 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-500" /> Skill Gaps
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {candidate.skillGaps.map(gap => (
+                          <span key={gap}
+                            className="px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 border border-red-200 text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                            {gap}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Strengths & Weaknesses */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {candidate.strengths.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-semibold mb-2.5 flex items-center gap-2">
+                          <Star className="w-4 h-4 text-green-500" /> Strengths
+                        </h3>
+                        <ul className="space-y-1.5">
+                          {candidate.strengths.map((s, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm text-green-700 dark:text-green-400">
+                              <span className="mt-0.5 shrink-0">✓</span>{s}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {candidate.weaknesses.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-semibold mb-2.5 flex items-center gap-2">
+                          <XCircle className="w-4 h-4 text-red-500" /> Weaknesses
+                        </h3>
+                        <ul className="space-y-1.5">
+                          {candidate.weaknesses.map((w, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400">
+                              <span className="mt-0.5 shrink-0">✗</span>{w}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Experience & Education */}
+                  {(resume?.experience || resume?.education) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {resume?.experience && (
+                        <div className="bg-muted/40 rounded-lg p-4 border border-border">
+                          <h3 className="text-sm font-semibold flex items-center gap-2 mb-2">
+                            <Briefcase className="w-4 h-4 text-primary" /> Experience
+                          </h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed">{resume.experience}</p>
+                        </div>
+                      )}
+                      {resume?.education && (
+                        <div className="bg-muted/40 rounded-lg p-4 border border-border">
+                          <h3 className="text-sm font-semibold flex items-center gap-2 mb-2">
+                            <GraduationCap className="w-4 h-4 text-primary" /> Education
+                          </h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed">{resume.education}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Flags */}
+                  {candidate.flags.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800 rounded-lg p-4">
+                      <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4" /> Flags / Concerns
+                      </h3>
+                      <ul className="space-y-1">
+                        {candidate.flags.map((f, i) => (
+                          <li key={i} className="text-sm text-amber-700 dark:text-amber-300">• {f}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* ── Action buttons — all three: Shortlist, Hire, Reject ── */}
+                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
+                    <Button
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => {
+                        updateCandidate({ ...candidate, status: 'shortlisted' });
+                        closeModal();
+                        toast({ title: `${candidate.name} shortlisted` });
+                      }}
+                    >
+                      <CheckCheck className="w-4 h-4 mr-2" /> Shortlist
+                    </Button>
+                    <Button
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      onClick={() => {
+                        updateCandidate({ ...candidate, status: 'hired' });
+                        closeModal();
+                        toast({ title: `🎉 ${candidate.name} hired!` });
+                      }}
+                    >
+                      <UserCheck className="w-4 h-4 mr-2" /> Hire
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="text-red-500 border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      onClick={() => {
+                        updateCandidate({ ...candidate, status: 'rejected' });
+                        closeModal();
+                        toast({ title: `${candidate.name} rejected` });
+                      }}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" /> Reject
+                    </Button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
