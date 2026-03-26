@@ -142,7 +142,7 @@ export default function RankingPage() {
           jobId: selectedJob,
           name: resume.candidateName || 'Unknown',
           email: resume.email || '',
-          matchScore: data?.matchScore ?? Math.floor(Math.random() * 30) + 60,
+          matchScore: Math.min(100, Math.max(0, data?.matchScore ?? Math.floor(Math.random() * 30) + 60)),
           skillMatch: data?.skillMatch ?? [],
           skillGaps: data?.skillGaps ?? [],
           experienceScore: data?.experienceScore ?? 0,
@@ -168,7 +168,7 @@ export default function RankingPage() {
         const resumeSkills = resume.skills.map(s => s.toLowerCase());
         const matched = resumeSkills.filter(s => jobSkills.includes(s));
         const matchScore = jobSkills.length > 0
-          ? Math.round((matched.length / jobSkills.length) * 100)
+          ? Math.min(100, Math.round((matched.length / jobSkills.length) * 100))
           : Math.floor(Math.random() * 30) + 50;
 
         const skillMatchData = job.skills.map(skill => ({
@@ -214,22 +214,22 @@ export default function RankingPage() {
   };
 
   const statusConfig: Record<string, { bg: string; label: string }> = {
-    pending:     { bg: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', label: 'Pending' },
-    shortlisted: { bg: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',    label: 'Shortlisted' },
-    rejected:    { bg: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',            label: 'Rejected' },
-    interview:   { bg: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',        label: 'Interview' },
-    hired:       { bg: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',label: 'Hired' },
+    pending: { bg: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', label: 'Pending' },
+    shortlisted: { bg: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400', label: 'Shortlisted' },
+    rejected: { bg: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400', label: 'Rejected' },
+    interview: { bg: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400', label: 'Interview' },
+    hired: { bg: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400', label: 'Hired' },
   };
 
   const getScoreColor = (score: number) =>
     score >= 80 ? 'text-green-600 dark:text-green-400' :
-    score >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
-    'text-red-500 dark:text-red-400';
+      score >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+        'text-red-500 dark:text-red-400';
 
   const getRankBadge = (index: number) => {
     if (index === 0) return { bg: 'bg-yellow-400', color: '#7a5700' };
-    if (index === 1) return { bg: 'bg-slate-300',  color: '#3a4050' };
-    if (index === 2) return { bg: 'bg-amber-600',  color: '#fff' };
+    if (index === 1) return { bg: 'bg-slate-300', color: '#3a4050' };
+    if (index === 2) return { bg: 'bg-amber-600', color: '#fff' };
     return null;
   };
 
@@ -553,8 +553,8 @@ export default function RankingPage() {
                   {/* Quick score stats */}
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { label: 'Experience',    value: candidate.experienceScore,          icon: Briefcase },
-                      { label: 'Education',     value: candidate.educationScore,           icon: GraduationCap },
+                      { label: 'Experience', value: candidate.experienceScore, icon: Briefcase },
+                      { label: 'Education', value: candidate.educationScore, icon: GraduationCap },
                       { label: 'AI Confidence', value: candidate.aiExplanation.confidence, icon: Zap },
                     ].map(({ label, value, icon: Icon }) => (
                       <div key={label} className="bg-muted/50 rounded-lg p-3 text-center">
@@ -589,11 +589,10 @@ export default function RankingPage() {
                           const matched = sm?.matched ?? false;
                           return (
                             <span key={skill}
-                              className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-                                matched
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium border ${matched
                                   ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/20 dark:border-green-700 dark:text-green-400'
                                   : 'bg-muted border-border text-muted-foreground'
-                              }`}>
+                                }`}>
                               {matched && <span className="mr-1">✓</span>}
                               {skill}
                             </span>
