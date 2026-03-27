@@ -8,11 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Mail, Send, Paperclip, X, FileText, Upload } from 'lucide-react';
+import { Mail, Send, Paperclip, X, FileText, Upload, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { EmailRecord } from '@/types/ats';
 
-// ✅ Backend API URL
 const BACKEND_URL = "http://localhost:8000";
 
 interface AttachedFile {
@@ -46,6 +45,7 @@ export default function EmailPage() {
   const [rawBody, setRawBody] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [candidateSearch, setCandidateSearch] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const template = emailTemplates.find(t => t.id === selectedTemplate);
@@ -79,6 +79,28 @@ export default function EmailPage() {
     setSelectedCandidates(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
+  };
+
+  // Filter candidates by search
+  const filteredCandidates = candidates.filter(c => {
+    if (!candidateSearch.trim()) return true;
+    const q = candidateSearch.toLowerCase();
+    return (
+      c.name?.toLowerCase().includes(q) ||
+      c.email?.toLowerCase().includes(q) ||
+      jobs.find(j => j.id === c.jobId)?.title?.toLowerCase().includes(q) ||
+      c.status?.toLowerCase().includes(q)
+    );
+  });
+
+  const handleSelectAll = () => {
+    const allIds = filteredCandidates.map(c => c.id);
+    const allSelected = allIds.every(id => selectedCandidates.includes(id));
+    if (allSelected) {
+      setSelectedCandidates(prev => prev.filter(id => !allIds.includes(id)));
+    } else {
+      setSelectedCandidates(prev => [...new Set([...prev, ...allIds])]);
+    }
   };
 
   const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,7 +158,6 @@ export default function EmailPage() {
       const finalBody    = resolvePlaceholders(rawBody, cid);
 
       try {
-        // ✅ Backend /send-email API call — real attachment support
         const res = await fetch(BACKEND_URL + "/send-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -154,10 +175,7 @@ export default function EmailPage() {
         });
 
         const data = await res.json();
-
-        if (!res.ok || !data.success) {
-          throw new Error(data.detail || data.message || "Email send failed");
-        }
+        if (!res.ok || !data.success) throw new Error(data.detail || data.message || "Email send failed");
 
         successCount++;
         addEmailRecord({
@@ -169,12 +187,11 @@ export default function EmailPage() {
           status: "sent",
           sentAt: new Date(),
         });
-
       } catch (err: any) {
         console.error("Email failed for " + c.name + ":", err);
         toast({
           title: "Failed: " + c.name,
-          description: err?.message || "Unknown error — check console (F12)",
+          description: err?.message || "Unknown error",
           variant: "destructive",
         });
         failCount++;
@@ -192,7 +209,7 @@ export default function EmailPage() {
 
     setSending(false);
     setSelectedCandidates([]);
-    if (successCount > 0) toast({ title: "Emails Sent!", description: successCount + " email(s) sent with attachment!" });
+    if (successCount > 0) toast({ title: "Emails Sent!", description: successCount + " email(s) sent!" });
     if (failCount > 0) toast({ title: "Some Failed", description: failCount + " email(s) failed.", variant: "destructive" });
   };
 
@@ -204,6 +221,7 @@ export default function EmailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Compose */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -216,7 +234,6 @@ export default function EmailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-
             <div className="space-y-2">
               <label className="text-sm font-medium">Template</label>
               <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
@@ -267,11 +284,10 @@ export default function EmailPage() {
             </div>
 
             {previewCandidate
-              ? <p className="text-xs text-blue-500">Live preview for <strong>{previewCandidate.name}</strong>. Each candidate gets their own filled email on send.</p>
-              : <p className="text-xs text-muted-foreground">Select a candidate to see live preview with their details.</p>
+              ? <p className="text-xs text-blue-500">Live preview for <strong>{previewCandidate.name}</strong>.</p>
+              : <p className="text-xs text-muted-foreground">Select a candidate to see live preview.</p>
             }
 
-            {/* Attachment — Sirf Offer Letter ke liye */}
             {isOfferLetterTemplate && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -330,38 +346,86 @@ export default function EmailPage() {
               <Send className="w-4 h-4 mr-2" />
               {sending
                 ? "Sending..."
-                : "Send to " + selectedCandidates.length + " candidate(s)" + (attachedFiles.length > 0 ? " (" + attachedFiles.length + " file attached)" : "")
+                : `Send to ${selectedCandidates.length} candidate(s)${attachedFiles.length > 0 ? ` (${attachedFiles.length} file attached)` : ""}`
               }
             </Button>
           </CardContent>
         </Card>
 
+        {/* Candidate selector */}
         <Card>
-          <CardHeader><CardTitle className="text-base">Select Candidates</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Select Candidates</CardTitle>
+            {/* Search bar */}
+            <div className="relative mt-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search candidates by name, email, job..."
+                value={candidateSearch}
+                onChange={e => setCandidateSearch(e.target.value)}
+                className="pl-9 pr-9 h-9 text-sm"
+              />
+              {candidateSearch && (
+                <button
+                  onClick={() => setCandidateSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {candidateSearch && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {filteredCandidates.length} of {candidates.length} candidates shown
+              </p>
+            )}
+          </CardHeader>
           <CardContent>
             {candidates.length === 0 ? (
               <p className="text-sm text-muted-foreground">No candidates available. Screen resumes first.</p>
+            ) : filteredCandidates.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No candidates match your search.</p>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {candidates.map(c => (
-                  <label key={c.id} className="flex items-center gap-3 p-2 rounded hover:bg-muted cursor-pointer">
-                    <Checkbox
-                      checked={selectedCandidates.includes(c.id)}
-                      onCheckedChange={() => toggleCandidate(c.id)}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.name}</p>
-                      <p className="text-xs text-muted-foreground">{c.email} — {c.matchScore}% match</p>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">{c.status}</Badge>
-                  </label>
-                ))}
+              <div className="space-y-1">
+                {/* Select all (filtered) */}
+                <div className="flex items-center gap-2 px-2 py-1.5 border-b mb-2">
+                  <Checkbox
+                    checked={filteredCandidates.length > 0 && filteredCandidates.every(c => selectedCandidates.includes(c.id))}
+                    onCheckedChange={handleSelectAll}
+                  />
+                  <span className="text-xs text-muted-foreground font-medium">
+                    Select all {candidateSearch ? 'matching' : ''} ({filteredCandidates.length})
+                  </span>
+                </div>
+
+                <div className="max-h-80 overflow-y-auto space-y-1">
+                  {filteredCandidates.map(c => (
+                    <label key={c.id} className="flex items-center gap-3 p-2 rounded hover:bg-muted cursor-pointer">
+                      <Checkbox
+                        checked={selectedCandidates.includes(c.id)}
+                        onCheckedChange={() => toggleCandidate(c.id)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {c.email}
+                          {jobs.find(j => j.id === c.jobId)?.title
+                            ? ` · ${jobs.find(j => j.id === c.jobId)?.title}`
+                            : ''}
+                          {' · '}{c.matchScore}% match
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="text-xs shrink-0">{c.status}</Badge>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
+      {/* Sent emails history */}
       {emailRecords.length > 0 && (
         <Card>
           <CardHeader>

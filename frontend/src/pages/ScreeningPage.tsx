@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileText, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Upload, FileText, CheckCircle2, XCircle, Loader2, Search, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -23,8 +24,8 @@ export default function ScreeningPage() {
   const [selectedJob, setSelectedJob] = useState<string>("");
   const [fileStatuses, setFileStatuses] = useState<FileStatus[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // ✅ Fetch resumes from Supabase on mount
   useEffect(() => {
     fetchResumes();
   }, []);
@@ -184,6 +185,20 @@ export default function ScreeningPage() {
   const totalCount = fileStatuses.length;
   const isProcessing = fileStatuses.some(f => f.status === "uploading" || f.status === "pending");
 
+  // Filter resumes based on search query
+  const filteredResumes = resumes.filter(r => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      r.candidateName?.toLowerCase().includes(q) ||
+      r.fileName?.toLowerCase().includes(q) ||
+      r.email?.toLowerCase().includes(q) ||
+      r.phone?.toLowerCase().includes(q) ||
+      r.skills?.some(s => s.toLowerCase().includes(q)) ||
+      jobs.find(j => j.id === r.jobId)?.title?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -269,7 +284,32 @@ export default function ScreeningPage() {
       {resumes.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Uploaded Resumes ({resumes.length})</CardTitle>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <CardTitle>Uploaded Resumes ({resumes.length})</CardTitle>
+              {/* Search Bar */}
+              <div className="relative w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, skill, email..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9 h-9 text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {searchQuery && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Showing {filteredResumes.length} of {resumes.length} resumes
+              </p>
+            )}
           </CardHeader>
           <Table>
             <TableHeader>
@@ -283,28 +323,36 @@ export default function ScreeningPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {resumes.map(r => (
-                <TableRow key={r.id}>
-                  <TableCell className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 shrink-0" />
-                    <span className="truncate max-w-[150px]">{r.fileName}</span>
+              {filteredResumes.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    No resumes match your search.
                   </TableCell>
-                  <TableCell>{r.candidateName}</TableCell>
-                  <TableCell>{r.email}</TableCell>
-                  <TableCell>{r.phone}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {r.skills?.slice(0, 3).map(s => (
-                        <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
-                      ))}
-                      {r.skills?.length > 3 && (
-                        <Badge variant="secondary" className="text-xs">+{r.skills.length - 3}</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{jobs.find(j => j.id === r.jobId)?.title || "—"}</TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredResumes.map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 shrink-0" />
+                      <span className="truncate max-w-[150px]">{r.fileName}</span>
+                    </TableCell>
+                    <TableCell>{r.candidateName}</TableCell>
+                    <TableCell>{r.email}</TableCell>
+                    <TableCell>{r.phone}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 flex-wrap">
+                        {r.skills?.slice(0, 3).map(s => (
+                          <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
+                        ))}
+                        {r.skills?.length > 3 && (
+                          <Badge variant="secondary" className="text-xs">+{r.skills.length - 3}</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{jobs.find(j => j.id === r.jobId)?.title || "—"}</TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </Card>
