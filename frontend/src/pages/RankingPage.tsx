@@ -11,7 +11,7 @@ import {
   Trophy, User, CheckCheck, XCircle, Mail, Loader2,
   FileText, Star, AlertTriangle, TrendingUp,
   Briefcase, GraduationCap, Phone, AtSign, Zap,
-  ExternalLink, UserCheck, Filter
+  ExternalLink, UserCheck, Filter, CalendarCheck
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -78,7 +78,7 @@ export default function RankingPage() {
     clearSelection();
   };
 
-  const bulkUpdateStatus = (status: 'shortlisted' | 'rejected' | 'hired') => {
+  const bulkUpdateStatus = (status: 'shortlisted' | 'rejected' | 'hired' | 'interview') => {
     filteredCandidates
       .filter(c => selectedIds.has(c.id))
       .forEach(c => updateCandidate({ ...c, status }));
@@ -255,6 +255,7 @@ export default function RankingPage() {
     { value: 'pending', label: 'Pending', count: candidates.filter(c => c.status === 'pending').length },
     { value: 'shortlisted', label: 'Shortlisted', count: candidates.filter(c => c.status === 'shortlisted').length },
     { value: 'rejected', label: 'Rejected', count: candidates.filter(c => c.status === 'rejected').length },
+    // ✅ FIX: Interview count now correctly reflects candidates with status === 'interview'
     { value: 'interview', label: 'Interview', count: candidates.filter(c => c.status === 'interview').length },
     { value: 'hired', label: 'Hired', count: candidates.filter(c => c.status === 'hired').length },
   ];
@@ -339,6 +340,12 @@ export default function RankingPage() {
               className="border-green-500 text-green-600 hover:bg-green-50"
               onClick={() => bulkUpdateStatus('shortlisted')}>
               <CheckCheck className="w-4 h-4 mr-1" /> Shortlist All
+            </Button>
+            {/* ✅ NEW: Bulk Interview button */}
+            <Button size="sm" variant="outline"
+              className="border-blue-500 text-blue-600 hover:bg-blue-50"
+              onClick={() => bulkUpdateStatus('interview')}>
+              <CalendarCheck className="w-4 h-4 mr-1" /> Interview All
             </Button>
             <Button size="sm" variant="outline"
               className="border-purple-500 text-purple-600 hover:bg-purple-50"
@@ -429,6 +436,12 @@ export default function RankingPage() {
                       onClick={() => updateCandidate({ ...candidate, status: 'shortlisted' })}>
                       Shortlist
                     </Button>
+                    {/* ✅ NEW: Interview button on each card */}
+                    <Button size="sm" variant="outline"
+                      className="text-blue-600 border-blue-400 hover:bg-blue-50"
+                      onClick={() => { updateCandidate({ ...candidate, status: 'interview' }); toast({ title: `${candidate.name} moved to Interview` }); }}>
+                      Interview
+                    </Button>
                     <Button size="sm" variant="outline"
                       className="text-purple-600 border-purple-400 hover:bg-purple-50"
                       onClick={() => updateCandidate({ ...candidate, status: 'hired' })}>
@@ -448,7 +461,7 @@ export default function RankingPage() {
       )}
 
       {/* ── Resume View Modal ── */}
-      {/* FIX: hideCloseButton removes the default X from DialogContent so only one X shows */}
+      {/* ✅ FIX: hideCloseButton removes the default X so only our custom X shows */}
       <Dialog open={!!viewingResume} onOpenChange={open => { if (!open) closeModal(); }}>
         <DialogContent
           className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0"
@@ -463,7 +476,7 @@ export default function RankingPage() {
               <>
                 {/* ── Banner ── */}
                 <div className="relative bg-gradient-to-br from-primary to-primary/70 text-primary-foreground px-6 pt-6 pb-8 rounded-t-lg">
-                  {/* Single close button — only this one */}
+                  {/* ✅ Single close button only */}
                   <button
                     onClick={closeModal}
                     className="absolute top-4 right-4 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors z-10"
@@ -771,8 +784,8 @@ export default function RankingPage() {
                     </div>
                   )}
 
-                  {/* Action buttons */}
-                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
+                  {/* ✅ Action buttons — now includes Interview */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-border">
                     <Button
                       className="bg-green-600 hover:bg-green-700 text-white"
                       onClick={() => {
@@ -782,6 +795,17 @@ export default function RankingPage() {
                       }}
                     >
                       <CheckCheck className="w-4 h-4 mr-2" /> Shortlist
+                    </Button>
+                    {/* ✅ NEW: Interview button in modal */}
+                    <Button
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={() => {
+                        updateCandidate({ ...candidate, status: 'interview' });
+                        closeModal();
+                        toast({ title: `${candidate.name} moved to Interview` });
+                      }}
+                    >
+                      <CalendarCheck className="w-4 h-4 mr-2" /> Interview
                     </Button>
                     <Button
                       className="bg-purple-600 hover:bg-purple-700 text-white"
