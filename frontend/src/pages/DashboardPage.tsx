@@ -13,11 +13,36 @@ export default function DashboardPage() {
   const rejected = candidates.filter(c => c.status === 'rejected').length;
   const pending = candidates.filter(c => c.status === 'pending').length;
 
+  // KPI cards — clicking shortlisted/rejected/pending navigates to ranking with filter
   const kpis = [
-    { label: 'Total Resumes', value: resumes.length, icon: FileText, color: 'text-primary' },
-    { label: 'Shortlisted', value: shortlisted, icon: Trophy, color: 'text-[hsl(142,71%,45%)]' },
-    { label: 'Rejected', value: rejected, icon: Clock, color: 'text-destructive' },
-    { label: 'Pending Review', value: pending, icon: Clock, color: 'text-[hsl(38,92%,50%)]' },
+    {
+      label: 'Total Resumes',
+      value: resumes.length,
+      icon: FileText,
+      color: 'text-primary',
+      onClick: () => navigate('/screening'),
+    },
+    {
+      label: 'Shortlisted',
+      value: shortlisted,
+      icon: Trophy,
+      color: 'text-[hsl(142,71%,45%)]',
+      onClick: () => navigate('/ranking?filter=shortlisted'),
+    },
+    {
+      label: 'Rejected',
+      value: rejected,
+      icon: Clock,
+      color: 'text-destructive',
+      onClick: () => navigate('/ranking?filter=rejected'),
+    },
+    {
+      label: 'Pending Review',
+      value: pending,
+      icon: Clock,
+      color: 'text-[hsl(38,92%,50%)]',
+      onClick: () => navigate('/ranking?filter=pending'),
+    },
   ];
 
   const chartData = [
@@ -36,14 +61,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* KPI Cards — clickable */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map(kpi => (
-          <Card key={kpi.label}>
+          <Card
+            key={kpi.label}
+            className="cursor-pointer hover:shadow-md hover:border-primary/40 transition-all"
+            onClick={kpi.onClick}
+          >
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">{kpi.label}</p>
                   <p className="text-3xl font-bold mt-1">{kpi.value}</p>
+                  <p className="text-xs text-muted-foreground mt-1 opacity-70">
+                    Click to view →
+                  </p>
+
                 </div>
                 <kpi.icon className={`w-10 h-10 ${kpi.color} opacity-80`} />
               </div>

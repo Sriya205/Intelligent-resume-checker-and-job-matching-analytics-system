@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useATS } from '@/contexts/ATSContext';
 import { Candidate, Resume } from '@/types/ats';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,16 +9,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Trophy, User, CheckCheck, XCircle, Mail, Loader2,
-  FileText, X, Star, AlertTriangle, TrendingUp,
+  FileText, Star, AlertTriangle, TrendingUp,
   Briefcase, GraduationCap, Phone, AtSign, Zap,
-  ExternalLink, UserCheck
+  ExternalLink, UserCheck, Filter
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useSearchParams } from 'react-router-dom';
+
+type StatusFilter = 'all' | 'pending' | 'shortlisted' | 'rejected' | 'interview' | 'hired';
 
 export default function RankingPage() {
   const { candidates, resumes, jobs, addCandidate, updateCandidate, addEmailRecord } = useATS();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedJob, setSelectedJob] = useState<string>('');
   const [screening, setScreening] = useState(false);
@@ -26,10 +30,24 @@ export default function RankingPage() {
   const [viewingResume, setViewingResume] = useState<{ candidate: Candidate; resume: Resume | undefined } | null>(null);
   const [loadingFileUrl, setLoadingFileUrl] = useState(false);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  const filteredCandidates = selectedJob
-    ? [...candidates].filter(c => c.jobId === selectedJob).sort((a, b) => b.matchScore - a.matchScore)
-    : [...candidates].sort((a, b) => b.matchScore - a.matchScore);
+  // Read filter from URL on mount (from dashboard KPI clicks)
+  useEffect(() => {
+    const filter = searchParams.get('filter') as StatusFilter | null;
+    if (filter && ['all', 'pending', 'shortlisted', 'rejected', 'interview', 'hired'].includes(filter)) {
+      setStatusFilter(filter);
+    }
+  }, [searchParams]);
+
+  // Apply both job filter and status filter
+  const filteredCandidates = [...candidates]
+    .filter(c => {
+      const jobMatch = selectedJob ? c.jobId === selectedJob : true;
+      const statusMatch = statusFilter === 'all' ? true : c.status === statusFilter;
+      return jobMatch && statusMatch;
+    })
+    .sort((a, b) => b.matchScore - a.matchScore);
 
   const allSelected = filteredCandidates.length > 0 && filteredCandidates.every(c => selectedIds.has(c.id));
   const someSelected = selectedIds.size > 0;
@@ -48,6 +66,17 @@ export default function RankingPage() {
   };
 
   const clearSelection = () => setSelectedIds(new Set());
+
+  const handleStatusFilterChange = (val: StatusFilter) => {
+    setStatusFilter(val);
+    if (val === 'all') {
+      searchParams.delete('filter');
+    } else {
+      searchParams.set('filter', val);
+    }
+    setSearchParams(searchParams);
+    clearSelection();
+  };
 
   const bulkUpdateStatus = (status: 'shortlisted' | 'rejected' | 'hired') => {
     filteredCandidates
@@ -221,6 +250,15 @@ export default function RankingPage() {
     hired: { bg: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400', label: 'Hired' },
   };
 
+  const statusFilterOptions: { value: StatusFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'All Candidates', count: candidates.length },
+    { value: 'pending', label: 'Pending', count: candidates.filter(c => c.status === 'pending').length },
+    { value: 'shortlisted', label: 'Shortlisted', count: candidates.filter(c => c.status === 'shortlisted').length },
+    { value: 'rejected', label: 'Rejected', count: candidates.filter(c => c.status === 'rejected').length },
+    { value: 'interview', label: 'Interview', count: candidates.filter(c => c.status === 'interview').length },
+    { value: 'hired', label: 'Hired', count: candidates.filter(c => c.status === 'hired').length },
+  ];
+
   const getScoreColor = (score: number) =>
     score >= 80 ? 'text-green-600 dark:text-green-400' :
       score >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
@@ -265,6 +303,31 @@ export default function RankingPage() {
         </div>
       </div>
 
+      {/* ── Status Filter Tabs ── */}
+      <div className="flex flex-wrap gap-2">
+        {statusFilterOptions.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => handleStatusFilterChange(opt.value)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+              statusFilter === opt.value
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
+            }`}
+          >
+            <Filter className="w-3 h-3" />
+            {opt.label}
+            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
+              statusFilter === opt.value
+                ? 'bg-primary-foreground/20 text-primary-foreground'
+                : 'bg-muted text-muted-foreground'
+            }`}>
+              {opt.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* ── Bulk Action Bar ── */}
       {someSelected && (
         <div className="flex items-center gap-3 p-3 bg-primary/10 border border-primary/20 rounded-lg flex-wrap">
@@ -301,7 +364,9 @@ export default function RankingPage() {
       {filteredCandidates.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
-            No candidates ranked yet. Select a job and click "Screen & Rank".
+            {statusFilter !== 'all'
+              ? `No ${statusFilter} candidates found.`
+              : 'No candidates ranked yet. Select a job and click "Screen & Rank".'}
           </CardContent>
         </Card>
       ) : (
@@ -324,8 +389,6 @@ export default function RankingPage() {
                     checked={selectedIds.has(candidate.id)}
                     onCheckedChange={() => toggleOne(candidate.id)}
                   />
-
-                  {/* Rank */}
                   <div className="flex items-center justify-center w-8 shrink-0">
                     {rankBadge ? (
                       <span
@@ -338,9 +401,7 @@ export default function RankingPage() {
                       <span className="text-lg font-bold text-muted-foreground">{index + 1}</span>
                     )}
                   </div>
-
                   <User className="w-5 h-5 text-muted-foreground shrink-0" />
-
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{candidate.name}</p>
                     <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
@@ -350,16 +411,13 @@ export default function RankingPage() {
                       </p>
                     )}
                   </div>
-
                   <div className="text-right shrink-0">
                     <p className={`text-xl font-bold ${getScoreColor(candidate.matchScore)}`}>
                       {candidate.matchScore}%
                     </p>
                     <p className="text-xs text-muted-foreground">Match</p>
                   </div>
-
                   <Badge className={`text-xs shrink-0 ${sc.bg}`}>{sc.label}</Badge>
-
                   <div className="flex gap-2 shrink-0 flex-wrap">
                     <Button size="sm" variant="outline"
                       className="text-primary border-primary/40 hover:bg-primary/5"
@@ -390,8 +448,12 @@ export default function RankingPage() {
       )}
 
       {/* ── Resume View Modal ── */}
+      {/* FIX: hideCloseButton removes the default X from DialogContent so only one X shows */}
       <Dialog open={!!viewingResume} onOpenChange={open => { if (!open) closeModal(); }}>
-        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0">
+        <DialogContent
+          className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0"
+          hideCloseButton
+        >
           {viewingResume && (() => {
             const { candidate, resume } = viewingResume;
             const job = jobs.find(j => j.id === candidate.jobId);
@@ -401,18 +463,19 @@ export default function RankingPage() {
               <>
                 {/* ── Banner ── */}
                 <div className="relative bg-gradient-to-br from-primary to-primary/70 text-primary-foreground px-6 pt-6 pb-8 rounded-t-lg">
+                  {/* Single close button — only this one */}
                   <button
                     onClick={closeModal}
-                    className="absolute top-4 right-4 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                    className="absolute top-4 right-4 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors z-10"
+                    aria-label="Close"
                   >
-                    <X className="w-4 h-4" />
+                    <XCircle className="w-5 h-5" />
                   </button>
 
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-4 pr-10">
                     <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shrink-0 text-2xl font-bold">
                       {candidate.name.charAt(0).toUpperCase()}
                     </div>
-
                     <div className="flex-1 min-w-0">
                       <h2 className="text-xl font-bold leading-tight">{candidate.name}</h2>
                       <div className="flex flex-wrap gap-3 mt-1.5 text-sm text-primary-foreground/80">
@@ -435,7 +498,6 @@ export default function RankingPage() {
                         </div>
                       )}
                     </div>
-
                     <div className="shrink-0 text-center bg-white/20 rounded-xl px-4 py-2">
                       <p className="text-2xl font-bold leading-none">{candidate.matchScore}%</p>
                       <p className="text-xs text-primary-foreground/70 mt-0.5">match</p>
@@ -464,7 +526,6 @@ export default function RankingPage() {
 
                   {/* ── RESUME FILE VIEWER ── */}
                   <div className="border border-border rounded-xl overflow-hidden">
-                    {/* File header bar */}
                     <div className="flex items-center justify-between px-4 py-3 bg-muted/60 border-b border-border">
                       <div className="flex items-center gap-2.5">
                         <FileText className="w-5 h-5 text-primary shrink-0" />
@@ -496,13 +557,11 @@ export default function RankingPage() {
                       </div>
                     </div>
 
-                    {/* File preview area */}
                     {loadingFileUrl ? (
                       <div className="flex items-center justify-center py-14 bg-muted/20">
                         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                       </div>
                     ) : fileUrl && isPdf(fileUrl) ? (
-                      /* PDF inline preview */
                       <div style={{ height: '460px' }} className="w-full bg-muted/20">
                         <iframe
                           src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=1`}
@@ -511,7 +570,6 @@ export default function RankingPage() {
                         />
                       </div>
                     ) : fileUrl ? (
-                      /* DOC / other — cannot inline preview */
                       <div className="flex flex-col items-center justify-center py-12 gap-3 bg-muted/20 text-center px-4">
                         <FileText className="w-12 h-12 text-muted-foreground/40" />
                         <p className="text-sm text-muted-foreground">
@@ -527,7 +585,6 @@ export default function RankingPage() {
                         </a>
                       </div>
                     ) : resume?.rawText ? (
-                      /* Fallback: show parsed raw text */
                       <div className="p-4 max-h-72 overflow-y-auto bg-muted/10">
                         <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
                           Parsed Resume Content
@@ -537,15 +594,10 @@ export default function RankingPage() {
                         </pre>
                       </div>
                     ) : (
-                      /* Nothing available */
                       <div className="flex flex-col items-center justify-center py-12 gap-2 bg-muted/20 text-center px-4">
                         <FileText className="w-10 h-10 text-muted-foreground/30" />
-                        <p className="text-sm text-muted-foreground">
-                          Resume file is not stored or accessible.
-                        </p>
-                        <p className="text-xs text-muted-foreground/60">
-                          Parsed details are shown below.
-                        </p>
+                        <p className="text-sm text-muted-foreground">Resume file is not stored or accessible.</p>
+                        <p className="text-xs text-muted-foreground/60">Parsed details are shown below.</p>
                       </div>
                     )}
                   </div>
@@ -577,7 +629,7 @@ export default function RankingPage() {
                     </div>
                   )}
 
-                  {/* Skills (color-coded matched vs unmatched) */}
+                  {/* Skills */}
                   {resume?.skills && resume.skills.length > 0 && (
                     <div>
                       <h3 className="text-sm font-semibold mb-2.5">Skills</h3>
@@ -590,9 +642,9 @@ export default function RankingPage() {
                           return (
                             <span key={skill}
                               className={`px-2.5 py-1 rounded-full text-xs font-medium border ${matched
-                                  ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/20 dark:border-green-700 dark:text-green-400'
-                                  : 'bg-muted border-border text-muted-foreground'
-                                }`}>
+                                ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/20 dark:border-green-700 dark:text-green-400'
+                                : 'bg-muted border-border text-muted-foreground'
+                              }`}>
                               {matched && <span className="mr-1">✓</span>}
                               {skill}
                             </span>
@@ -615,9 +667,7 @@ export default function RankingPage() {
                               <span className="text-sm flex items-center gap-1.5">
                                 {sm.skill}
                                 {sm.required && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                    Required
-                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">Required</span>
                                 )}
                               </span>
                               <span className={`text-xs font-medium ${sm.matched ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
@@ -721,7 +771,7 @@ export default function RankingPage() {
                     </div>
                   )}
 
-                  {/* ── Action buttons — all three: Shortlist, Hire, Reject ── */}
+                  {/* Action buttons */}
                   <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
                     <Button
                       className="bg-green-600 hover:bg-green-700 text-white"
