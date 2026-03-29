@@ -461,11 +461,10 @@ export default function RankingPage() {
       )}
 
       {/* ── Resume View Modal ── */}
-      {/* ✅ FIX: hideCloseButton removes the default X so only our custom X shows */}
+      {/* FIX: hideCloseButton removes the default X so only our custom X shows */}
       <Dialog open={!!viewingResume} onOpenChange={open => { if (!open) closeModal(); }}>
         <DialogContent
           className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0"
-          hideCloseButton
         >
           {viewingResume && (() => {
             const { candidate, resume } = viewingResume;
@@ -577,7 +576,7 @@ export default function RankingPage() {
                     ) : fileUrl && isPdf(fileUrl) ? (
                       <div style={{ height: '460px' }} className="w-full bg-muted/20">
                         <iframe
-                          src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                          src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
                           className="w-full h-full border-0"
                           title={`Resume — ${candidate.name}`}
                         />
