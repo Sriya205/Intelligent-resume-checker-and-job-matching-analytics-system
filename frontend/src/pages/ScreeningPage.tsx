@@ -8,9 +8,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
-import { Upload, FileText, CheckCircle2, XCircle, Loader2, Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alertdialog";
+import { Upload, FileText, CheckCircle2, XCircle, Loader2, Search, X, Trash2 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface FileStatus {
   name: string;
@@ -19,12 +31,16 @@ interface FileStatus {
 }
 
 export default function ScreeningPage() {
-  const { resumes, addResume, setResumes, jobs } = useATS();
+  const { resumes, addResume, setResumes, deleteResume, jobs } = useATS();
+  const { toast } = useToast();
 
   const [selectedJob, setSelectedJob] = useState<string>("");
   const [fileStatuses, setFileStatuses] = useState<FileStatus[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [resumeToDelete, setResumeToDelete] = useState<Resume | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchResumes();
@@ -181,11 +197,49 @@ export default function ScreeningPage() {
     input.click();
   };
 
+  const handleDeleteClick = (resume: Resume) => {
+    setResumeToDelete(resume);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!resumeToDelete) return;
+    setDeletingId(resumeToDelete.id);
+    setDeleteDialogOpen(false);
+
+    try {
+      // Delete from Supabase DB
+      const { error } = await supabase
+        .from("resumes")
+        .delete()
+        .eq("id", resumeToDelete.id);
+
+      if (error) throw error;
+
+      // Delete from local state (also removes associated candidates)
+      deleteResume(resumeToDelete.id);
+
+      toast({
+        title: "Resume Deleted",
+        description: `${resumeToDelete.candidateName || resumeToDelete.fileName} has been removed.`,
+      });
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Delete Failed",
+        description: err?.message || "Could not delete resume.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
+      setResumeToDelete(null);
+    }
+  };
+
   const doneCount = fileStatuses.filter(f => f.status === "done").length;
   const totalCount = fileStatuses.length;
   const isProcessing = fileStatuses.some(f => f.status === "uploading" || f.status === "pending");
 
-  // Filter resumes based on search query
   const filteredResumes = resumes.filter(r => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -286,7 +340,6 @@ export default function ScreeningPage() {
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-3">
               <CardTitle>Uploaded Resumes ({resumes.length})</CardTitle>
-              {/* Search Bar */}
               <div className="relative w-72">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -320,12 +373,13 @@ export default function ScreeningPage() {
                 <TableHead>Phone</TableHead>
                 <TableHead>Skills</TableHead>
                 <TableHead>Job</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredResumes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No resumes match your search.
                   </TableCell>
                 </TableRow>
@@ -350,6 +404,20 @@ export default function ScreeningPage() {
                       </div>
                     </TableCell>
                     <TableCell>{jobs.find(j => j.id === r.jobId)?.title || "—"}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={deletingId === r.id}
+                        onClick={() => handleDeleteClick(r)}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        {deletingId === r.id
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Trash2 className="w-4 h-4" />
+                        }
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -357,6 +425,29 @@ export default function ScreeningPage() {
           </Table>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Resume?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the resume for{" "}
+              <strong>{resumeToDelete?.candidateName || resumeToDelete?.fileName}</strong> and
+              remove any associated candidate records. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

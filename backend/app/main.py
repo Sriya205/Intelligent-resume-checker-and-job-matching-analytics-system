@@ -39,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Gmail credentials — .env mein daalo ya yahan directly likho
+# Gmail credentials — .env mein daalo ya yahan directly likho
 GMAIL_USER = os.getenv("GMAIL_USER", "your_gmail@gmail.com")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "your_app_password_here")
 
