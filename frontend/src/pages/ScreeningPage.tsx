@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +42,11 @@ export default function ScreeningPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [resumeToDelete, setResumeToDelete] = useState<Resume | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     fetchResumes();
@@ -197,6 +203,7 @@ export default function ScreeningPage() {
     input.click();
   };
 
+  // Single delete
   const handleDeleteClick = (resume: Resume) => {
     setResumeToDelete(resume);
     setDeleteDialogOpen(true);
@@ -208,7 +215,6 @@ export default function ScreeningPage() {
     setDeleteDialogOpen(false);
 
     try {
-      // Delete from Supabase DB
       const { error } = await supabase
         .from("resumes")
         .delete()
@@ -216,8 +222,8 @@ export default function ScreeningPage() {
 
       if (error) throw error;
 
-      // Delete from local state (also removes associated candidates)
       deleteResume(resumeToDelete.id);
+      setSelectedIds(prev => { const next = new Set(prev); next.delete(resumeToDelete.id); return next; });
 
       toast({
         title: "Resume Deleted",
@@ -236,10 +242,36 @@ export default function ScreeningPage() {
     }
   };
 
-  const doneCount = fileStatuses.filter(f => f.status === "done").length;
-  const totalCount = fileStatuses.length;
-  const isProcessing = fileStatuses.some(f => f.status === "uploading" || f.status === "pending");
+  // Bulk delete
+  const handleBulkDeleteConfirm = async () => {
+    setBulkDeleting(true);
+    setBulkDeleteDialogOpen(false);
+    let successCount = 0;
+    let failCount = 0;
 
+    for (const id of Array.from(selectedIds)) {
+      try {
+        const { error } = await supabase.from("resumes").delete().eq("id", id);
+        if (error) throw error;
+        deleteResume(id);
+        successCount++;
+      } catch (err) {
+        failCount++;
+      }
+    }
+
+    setBulkDeleting(false);
+    setSelectedIds(new Set());
+
+    if (successCount > 0) {
+      toast({ title: "Resumes Deleted", description: `${successCount} resume(s) deleted successfully.` });
+    }
+    if (failCount > 0) {
+      toast({ title: "Some Failed", description: `${failCount} resume(s) could not be deleted.`, variant: "destructive" });
+    }
+  };
+
+  // Selection helpers
   const filteredResumes = resumes.filter(r => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -252,6 +284,36 @@ export default function ScreeningPage() {
       jobs.find(j => j.id === r.jobId)?.title?.toLowerCase().includes(q)
     );
   });
+
+  const allFilteredSelected = filteredResumes.length > 0 && filteredResumes.every(r => selectedIds.has(r.id));
+
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredResumes.forEach(r => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredResumes.forEach(r => next.add(r.id));
+        return next;
+      });
+    }
+  };
+
+  const doneCount = fileStatuses.filter(f => f.status === "done").length;
+  const totalCount = fileStatuses.length;
+  const isProcessing = fileStatuses.some(f => f.status === "uploading" || f.status === "pending");
 
   return (
     <div className="p-6 space-y-6">
@@ -340,22 +402,40 @@ export default function ScreeningPage() {
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-3">
               <CardTitle>Uploaded Resumes ({resumes.length})</CardTitle>
-              <div className="relative w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name, skill, email..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-9 h-9 text-sm"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              <div className="flex items-center gap-3">
+                {/* Bulk delete button — shown when something is selected */}
+                {selectedIds.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={bulkDeleting}
+                    onClick={() => setBulkDeleteDialogOpen(true)}
                   >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                    {bulkDeleting
+                      ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                      : <Trash2 className="w-4 h-4 mr-1.5" />
+                    }
+                    Delete Selected ({selectedIds.size})
+                  </Button>
                 )}
+
+                <div className="relative w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name, skill, email..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-9 h-9 text-sm"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             {searchQuery && (
@@ -367,6 +447,13 @@ export default function ScreeningPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allFilteredSelected}
+                    onCheckedChange={toggleAll}
+                    aria-label="Select all"
+                  />
+                </TableHead>
                 <TableHead>File</TableHead>
                 <TableHead>Candidate</TableHead>
                 <TableHead>Email</TableHead>
@@ -379,13 +466,23 @@ export default function ScreeningPage() {
             <TableBody>
               {filteredResumes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No resumes match your search.
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredResumes.map(r => (
-                  <TableRow key={r.id}>
+                  <TableRow
+                    key={r.id}
+                    className={selectedIds.has(r.id) ? "bg-primary/5" : ""}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(r.id)}
+                        onCheckedChange={() => toggleOne(r.id)}
+                        aria-label={`Select ${r.candidateName}`}
+                      />
+                    </TableCell>
                     <TableCell className="flex items-center gap-2">
                       <FileText className="w-4 h-4 shrink-0" />
                       <span className="truncate max-w-[150px]">{r.fileName}</span>
@@ -426,7 +523,7 @@ export default function ScreeningPage() {
         </Card>
       )}
 
-      {/* Delete Confirmation Dialog */}
+      {/* Single Delete Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -444,6 +541,28 @@ export default function ScreeningPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} Resume(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{selectedIds.size}</strong> selected resume(s) and
+              all associated candidate records. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete All Selected
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

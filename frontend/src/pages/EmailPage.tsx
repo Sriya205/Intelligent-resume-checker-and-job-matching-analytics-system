@@ -35,6 +35,15 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+// Map template type → candidate status filter
+// e.g. "shortlist" template => show shortlisted candidates
+const templateTypeToStatus: Record<string, string | null> = {
+  shortlist:  'shortlisted',
+  rejection:  'rejected',
+  interview:  'interview',
+  offer:      'hired',   // offer letter → hired candidates
+};
+
 export default function EmailPage() {
   const { candidates, emailTemplates, emailRecords, addEmailRecord, jobs } = useATS();
   const { toast } = useToast();
@@ -51,6 +60,9 @@ export default function EmailPage() {
   const template = emailTemplates.find(t => t.id === selectedTemplate);
   const isOfferLetterTemplate =
     template?.type === "offer" || template?.name?.toLowerCase().includes("offer");
+
+  // Determine which status to filter by based on selected template type
+  const templateStatusFilter = template ? (templateTypeToStatus[template.type] ?? null) : null;
 
   const previewCandidate = selectedCandidates.length > 0
     ? candidates.find(c => c.id === selectedCandidates[0])
@@ -73,16 +85,19 @@ export default function EmailPage() {
     const tmpl = emailTemplates.find(t => t.id === id);
     if (tmpl) { setRawSubject(tmpl.subject); setRawBody(tmpl.body); }
     setAttachedFiles([]);
+    setSelectedCandidates([]); // Clear selection when template changes
+    setCandidateSearch("");
   };
 
-  const toggleCandidate = (id: string) => {
-    setSelectedCandidates(prev =>
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
-  };
+  // Filter candidates:
+  // 1. By template type (status-based) — if a template is selected
+  // 2. By search query
+  const statusFilteredCandidates = candidates.filter(c => {
+    if (!templateStatusFilter) return true; // no template or unknown type → show all
+    return c.status === templateStatusFilter;
+  });
 
-  // Filter candidates by search
-  const filteredCandidates = candidates.filter(c => {
+  const filteredCandidates = statusFilteredCandidates.filter(c => {
     if (!candidateSearch.trim()) return true;
     const q = candidateSearch.toLowerCase();
     return (
@@ -92,6 +107,12 @@ export default function EmailPage() {
       c.status?.toLowerCase().includes(q)
     );
   });
+
+  const toggleCandidate = (id: string) => {
+    setSelectedCandidates(prev =>
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
 
   const handleSelectAll = () => {
     const allIds = filteredCandidates.map(c => c.id);
@@ -211,6 +232,15 @@ export default function EmailPage() {
     setSelectedCandidates([]);
     if (successCount > 0) toast({ title: "Emails Sent!", description: successCount + " email(s) sent!" });
     if (failCount > 0) toast({ title: "Some Failed", description: failCount + " email(s) failed.", variant: "destructive" });
+  };
+
+  // Status badge colors for the candidate list
+  const statusBadgeStyle: Record<string, string> = {
+    pending:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    rejected:    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    interview:   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    hired:       'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   };
 
   return (
@@ -356,6 +386,22 @@ export default function EmailPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Select Candidates</CardTitle>
+
+            {/* Template filter hint */}
+            {template && templateStatusFilter && (
+              <div className="flex items-center gap-2 mt-1 p-2 rounded-md bg-primary/5 border border-primary/20">
+                <span className="text-xs text-muted-foreground">
+                  Showing only
+                </span>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusBadgeStyle[templateStatusFilter] || ''}`}>
+                  {templateStatusFilter}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  candidates for <strong>{template.name}</strong> template
+                </span>
+              </div>
+            )}
+
             {/* Search bar */}
             <div className="relative mt-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -374,7 +420,7 @@ export default function EmailPage() {
                 </button>
               )}
             </div>
-            {candidateSearch && (
+            {(candidateSearch || templateStatusFilter) && (
               <p className="text-xs text-muted-foreground mt-1">
                 {filteredCandidates.length} of {candidates.length} candidates shown
               </p>
@@ -384,17 +430,29 @@ export default function EmailPage() {
             {candidates.length === 0 ? (
               <p className="text-sm text-muted-foreground">No candidates available. Screen resumes first.</p>
             ) : filteredCandidates.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">No candidates match your search.</p>
+              <div className="text-center py-8 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  {templateStatusFilter
+                    ? `No ${templateStatusFilter} candidates found.`
+                    : "No candidates match your search."
+                  }
+                </p>
+                {templateStatusFilter && (
+                  <p className="text-xs text-muted-foreground/70">
+                    Go to Candidate Ranking to change candidate statuses.
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="space-y-1">
-                {/* Select all (filtered) */}
+                {/* Select all */}
                 <div className="flex items-center gap-2 px-2 py-1.5 border-b mb-2">
                   <Checkbox
                     checked={filteredCandidates.length > 0 && filteredCandidates.every(c => selectedCandidates.includes(c.id))}
                     onCheckedChange={handleSelectAll}
                   />
                   <span className="text-xs text-muted-foreground font-medium">
-                    Select all {candidateSearch ? 'matching' : ''} ({filteredCandidates.length})
+                    Select all ({filteredCandidates.length})
                   </span>
                 </div>
 
@@ -415,7 +473,9 @@ export default function EmailPage() {
                           {' · '}{c.matchScore}% match
                         </p>
                       </div>
-                      <Badge variant="secondary" className="text-xs shrink-0">{c.status}</Badge>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${statusBadgeStyle[c.status] || 'bg-muted text-muted-foreground'}`}>
+                        {c.status}
+                      </span>
                     </label>
                   ))}
                 </div>
