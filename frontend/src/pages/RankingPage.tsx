@@ -154,16 +154,18 @@ export default function RankingPage() {
       if (candidates.some(c => c.resumeId === resume.id && c.jobId === selectedJob)) continue;
 
       try {
-        const { data, error } = await supabase.functions.invoke('analyze-resume', {
-          body: {
-            action: 'score',
-            resumeText: resume.rawText || resume.skills.join(' '),
-            jobDescription: `${job.title} ${job.description} ${job.requirements || ''}`,
-            candidateName: resume.candidateName,
-            candidateSkills: resume.skills,
-          },
+        const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/ai-analysis`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resume: resume.rawText || resume.skills.join(' '),
+            job: `${job.title} ${job.description} ${job.requirements || ''}`,
+            candidate_name: resume.candidateName,
+            candidate_skills: resume.skills,
+          }),
         });
-        if (error) throw error;
+        const data = await response.json();
+        if (!response.ok) throw new Error('Analysis failed');
 
         const candidate: Candidate = {
           id: crypto.randomUUID(),
@@ -310,19 +312,17 @@ export default function RankingPage() {
           <button
             key={opt.value}
             onClick={() => handleStatusFilterChange(opt.value)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-              statusFilter === opt.value
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${statusFilter === opt.value
                 ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                 : 'bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
-            }`}
+              }`}
           >
             <Filter className="w-3 h-3" />
             {opt.label}
-            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
-              statusFilter === opt.value
+            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${statusFilter === opt.value
                 ? 'bg-primary-foreground/20 text-primary-foreground'
                 : 'bg-muted text-muted-foreground'
-            }`}>
+              }`}>
               {opt.count}
             </span>
           </button>
@@ -656,7 +656,7 @@ export default function RankingPage() {
                               className={`px-2.5 py-1 rounded-full text-xs font-medium border ${matched
                                 ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/20 dark:border-green-700 dark:text-green-400'
                                 : 'bg-muted border-border text-muted-foreground'
-                              }`}>
+                                }`}>
                               {matched && <span className="mr-1">✓</span>}
                               {skill}
                             </span>
