@@ -98,7 +98,7 @@ export default function ScreeningPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("http://127.0.0.1:8000/parse-resume", {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/parse-resume`, {
         method: "POST",
         body: formData,
       });
@@ -131,7 +131,7 @@ export default function ScreeningPage() {
 
       if (selectedJob) {
         const job = jobs.find(j => j.id === selectedJob);
-        const aiResponse = await fetch("http://127.0.0.1:8000/ai-analysis", {
+        const aiResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/ai-analysis`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

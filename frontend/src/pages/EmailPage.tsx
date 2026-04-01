@@ -12,7 +12,7 @@ import { Mail, Send, Paperclip, X, FileText, Upload, Search } from 'lucide-react
 import { useToast } from '@/hooks/use-toast';
 import { EmailRecord } from '@/types/ats';
 
-const BACKEND_URL = "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 interface AttachedFile {
   name: string;
