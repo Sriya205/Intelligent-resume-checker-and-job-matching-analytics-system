@@ -38,10 +38,10 @@ const fileToBase64 = (file: File): Promise<string> =>
 // Map template type → candidate status filter
 // e.g. "shortlist" template => show shortlisted candidates
 const templateTypeToStatus: Record<string, string | null> = {
-  shortlist:  'shortlisted',
-  rejection:  'rejected',
-  interview:  'interview',
-  offer:      'hired',   // offer letter → hired candidates
+  shortlist: 'shortlisted',
+  rejection: 'rejected',
+  interview: 'interview',
+  offer: 'hired',   // offer letter → hired candidates
 };
 
 export default function EmailPage() {
@@ -78,7 +78,7 @@ export default function EmailPage() {
   };
 
   const previewSubject = previewCandidate ? resolvePlaceholders(rawSubject) : rawSubject;
-  const previewBody    = previewCandidate ? resolvePlaceholders(rawBody)    : rawBody;
+  const previewBody = previewCandidate ? resolvePlaceholders(rawBody) : rawBody;
 
   const handleTemplateChange = (id: string) => {
     setSelectedTemplate(id);
@@ -176,7 +176,7 @@ export default function EmailPage() {
       if (!c) continue;
 
       const finalSubject = resolvePlaceholders(rawSubject, cid);
-      const finalBody    = resolvePlaceholders(rawBody, cid);
+      const finalBody = resolvePlaceholders(rawBody, cid);
 
       try {
         const res = await fetch(BACKEND_URL + "/send-email", {
@@ -236,11 +236,11 @@ export default function EmailPage() {
 
   // Status badge colors for the candidate list
   const statusBadgeStyle: Record<string, string> = {
-    pending:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
     shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-    rejected:    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-    interview:   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-    hired:       'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+    rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    interview: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    hired: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   };
 
   return (
@@ -504,7 +504,7 @@ export default function EmailPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {emailRecords.map(r => (
+              {[...emailRecords].reverse().map(r => (
                 <TableRow key={r.id}>
                   <TableCell>{r.candidateName}</TableCell>
                   <TableCell className="max-w-xs truncate">{r.subject}</TableCell>
