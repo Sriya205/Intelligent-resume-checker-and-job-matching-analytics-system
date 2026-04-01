@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useATS } from "@/contexts/ATSContext";
 import { Resume } from "@/types/ats";
 
@@ -39,12 +39,17 @@ export default function ScreeningPage() {
   const [fileStatuses, setFileStatuses] = useState<FileStatus[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastClickedIndexRef = useRef<number | null>(null);
+
+  // Single delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [resumeToDelete, setResumeToDelete] = useState<Resume | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Multi-select state
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Bulk delete dialog
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
@@ -203,7 +208,89 @@ export default function ScreeningPage() {
     input.click();
   };
 
-  // Single delete
+  // ── Multi-select logic ────────────────────────────────────────────────────
+
+  const filteredResumes = resumes.filter(r => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      r.candidateName?.toLowerCase().includes(q) ||
+      r.fileName?.toLowerCase().includes(q) ||
+      r.email?.toLowerCase().includes(q) ||
+      r.phone?.toLowerCase().includes(q) ||
+      r.skills?.some(s => s.toLowerCase().includes(q)) ||
+      jobs.find(j => j.id === r.jobId)?.title?.toLowerCase().includes(q)
+    );
+  });
+
+  const allSelected =
+    filteredResumes.length > 0 &&
+    filteredResumes.every(r => selectedIds.has(r.id));
+
+  const someSelected = selectedIds.size > 0;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      // Deselect all filtered
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredResumes.forEach(r => next.delete(r.id));
+        return next;
+      });
+    } else {
+      // Select all filtered
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredResumes.forEach(r => next.add(r.id));
+        return next;
+      });
+    }
+    lastClickedIndexRef.current = null;
+  };
+
+  const handleRowCheckbox = (
+    e: React.MouseEvent,
+    resumeId: string,
+    index: number
+  ) => {
+    const isShift = e.shiftKey;
+
+    if (isShift && lastClickedIndexRef.current !== null) {
+      // Shift-click: select range between lastClickedIndex and current index
+      const start = Math.min(lastClickedIndexRef.current, index);
+      const end = Math.max(lastClickedIndexRef.current, index);
+      const rangeIds = filteredResumes.slice(start, end + 1).map(r => r.id);
+
+      // Determine whether to select or deselect based on current item state
+      const shouldSelect = !selectedIds.has(resumeId);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        rangeIds.forEach(id => {
+          if (shouldSelect) next.add(id);
+          else next.delete(id);
+        });
+        return next;
+      });
+    } else {
+      // Normal click: toggle single
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(resumeId)) next.delete(resumeId);
+        else next.add(resumeId);
+        return next;
+      });
+    }
+
+    lastClickedIndexRef.current = index;
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    lastClickedIndexRef.current = null;
+  };
+
+  // ── Single delete ─────────────────────────────────────────────────────────
+
   const handleDeleteClick = (resume: Resume) => {
     setResumeToDelete(resume);
     setDeleteDialogOpen(true);
@@ -223,7 +310,11 @@ export default function ScreeningPage() {
       if (error) throw error;
 
       deleteResume(resumeToDelete.id);
-      setSelectedIds(prev => { const next = new Set(prev); next.delete(resumeToDelete.id); return next; });
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(resumeToDelete.id);
+        return next;
+      });
 
       toast({
         title: "Resume Deleted",
@@ -242,78 +333,48 @@ export default function ScreeningPage() {
     }
   };
 
-  // Bulk delete
+  // ── Bulk delete ───────────────────────────────────────────────────────────
+
   const handleBulkDeleteConfirm = async () => {
     setBulkDeleting(true);
     setBulkDeleteDialogOpen(false);
+
+    const idsToDelete = Array.from(selectedIds);
     let successCount = 0;
     let failCount = 0;
 
-    for (const id of Array.from(selectedIds)) {
+    for (const id of idsToDelete) {
       try {
         const { error } = await supabase.from("resumes").delete().eq("id", id);
         if (error) throw error;
         deleteResume(id);
         successCount++;
       } catch (err) {
+        console.error(`Failed to delete resume ${id}:`, err);
         failCount++;
       }
     }
 
-    setBulkDeleting(false);
     setSelectedIds(new Set());
+    lastClickedIndexRef.current = null;
+    setBulkDeleting(false);
 
     if (successCount > 0) {
-      toast({ title: "Resumes Deleted", description: `${successCount} resume(s) deleted successfully.` });
-    }
-    if (failCount > 0) {
-      toast({ title: "Some Failed", description: `${failCount} resume(s) could not be deleted.`, variant: "destructive" });
-    }
-  };
-
-  // Selection helpers
-  const filteredResumes = resumes.filter(r => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      r.candidateName?.toLowerCase().includes(q) ||
-      r.fileName?.toLowerCase().includes(q) ||
-      r.email?.toLowerCase().includes(q) ||
-      r.phone?.toLowerCase().includes(q) ||
-      r.skills?.some(s => s.toLowerCase().includes(q)) ||
-      jobs.find(j => j.id === r.jobId)?.title?.toLowerCase().includes(q)
-    );
-  });
-
-  const allFilteredSelected = filteredResumes.length > 0 && filteredResumes.every(r => selectedIds.has(r.id));
-
-  const toggleOne = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    if (allFilteredSelected) {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        filteredResumes.forEach(r => next.delete(r.id));
-        return next;
+      toast({
+        title: `${successCount} Resume(s) Deleted`,
+        description: failCount > 0 ? `${failCount} failed.` : "All selected resumes removed.",
       });
-    } else {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        filteredResumes.forEach(r => next.add(r.id));
-        return next;
-      });
+    }
+    if (failCount > 0 && successCount === 0) {
+      toast({ title: "Bulk Delete Failed", variant: "destructive" });
     }
   };
 
   const doneCount = fileStatuses.filter(f => f.status === "done").length;
   const totalCount = fileStatuses.length;
   const isProcessing = fileStatuses.some(f => f.status === "uploading" || f.status === "pending");
+
+  const selectedInFiltered = filteredResumes.filter(r => selectedIds.has(r.id));
 
   return (
     <div className="p-6 space-y-6">
@@ -402,40 +463,22 @@ export default function ScreeningPage() {
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-3">
               <CardTitle>Uploaded Resumes ({resumes.length})</CardTitle>
-              <div className="flex items-center gap-3">
-                {/* Bulk delete button — shown when something is selected */}
-                {selectedIds.size > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={bulkDeleting}
-                    onClick={() => setBulkDeleteDialogOpen(true)}
+              <div className="relative w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, skill, email..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9 h-9 text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {bulkDeleting
-                      ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                      : <Trash2 className="w-4 h-4 mr-1.5" />
-                    }
-                    Delete Selected ({selectedIds.size})
-                  </Button>
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 )}
-
-                <div className="relative w-72">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by name, skill, email..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="pl-9 pr-9 h-9 text-sm"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
             {searchQuery && (
@@ -444,13 +487,48 @@ export default function ScreeningPage() {
               </p>
             )}
           </CardHeader>
+
+          {/* Bulk action bar */}
+          {someSelected && (
+            <div className="mx-6 mb-3 flex items-center gap-3 px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-lg flex-wrap">
+              <span className="text-sm font-medium text-primary">
+                {selectedIds.size} resume(s) selected
+              </span>
+              <div className="flex gap-2 ml-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  disabled={bulkDeleting}
+                  onClick={() => setBulkDeleteDialogOpen(true)}
+                >
+                  {bulkDeleting
+                    ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    : <Trash2 className="w-4 h-4 mr-1" />
+                  }
+                  Delete Selected ({selectedIds.size})
+                </Button>
+                <Button size="sm" variant="ghost" onClick={clearSelection}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Shift-select hint */}
+          <div className="mx-6 mb-2">
+            <p className="text-xs text-muted-foreground">
+              💡 Tip: Click a checkbox, then <kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">Shift</kbd> + click another to select a range
+            </p>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={allFilteredSelected}
-                    onCheckedChange={toggleAll}
+                    checked={allSelected}
+                    onCheckedChange={toggleSelectAll}
                     aria-label="Select all"
                   />
                 </TableHead>
@@ -465,21 +543,37 @@ export default function ScreeningPage() {
             </TableHeader>
             <TableBody>
               {filteredResumes.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <tr>
+                  <td colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
                     No resumes match your search.
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ) : (
-                filteredResumes.map(r => (
+                filteredResumes.map((r, index) => (
                   <TableRow
                     key={r.id}
-                    className={selectedIds.has(r.id) ? "bg-primary/5" : ""}
+                    className={`cursor-pointer select-none transition-colors ${
+                      selectedIds.has(r.id)
+                        ? "bg-primary/5 hover:bg-primary/10"
+                        : "hover:bg-muted/40"
+                    }`}
+                    onClick={(e) => {
+                      // Only trigger if clicking the row itself, not the delete button
+                      const target = e.target as HTMLElement;
+                      if (target.closest('[data-no-row-click]')) return;
+                      handleRowCheckbox(e, r.id, index);
+                    }}
                   >
-                    <TableCell>
+                    <TableCell
+                      className="w-10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRowCheckbox(e, r.id, index);
+                      }}
+                    >
                       <Checkbox
                         checked={selectedIds.has(r.id)}
-                        onCheckedChange={() => toggleOne(r.id)}
+                        onCheckedChange={() => {}} // handled by row click
                         aria-label={`Select ${r.candidateName}`}
                       />
                     </TableCell>
@@ -501,12 +595,15 @@ export default function ScreeningPage() {
                       </div>
                     </TableCell>
                     <TableCell>{jobs.find(j => j.id === r.jobId)?.title || "—"}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" data-no-row-click>
                       <Button
                         variant="ghost"
                         size="icon"
                         disabled={deletingId === r.id}
-                        onClick={() => handleDeleteClick(r)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteClick(r);
+                        }}
                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       >
                         {deletingId === r.id
@@ -552,8 +649,8 @@ export default function ScreeningPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {selectedIds.size} Resume(s)?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>{selectedIds.size}</strong> selected resume(s) and
-              all associated candidate records. This action cannot be undone.
+              This will permanently delete <strong>{selectedIds.size}</strong> selected resume(s)
+              and all associated candidate records. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -562,7 +659,7 @@ export default function ScreeningPage() {
               onClick={handleBulkDeleteConfirm}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete All Selected
+              Delete All {selectedIds.size}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
