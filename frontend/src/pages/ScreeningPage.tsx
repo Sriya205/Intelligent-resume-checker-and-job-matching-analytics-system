@@ -61,7 +61,7 @@ export default function ScreeningPage() {
     const { data, error } = await supabase
       .from("resumes")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("uploaded_at", { ascending: false });
 
     if (error) { console.error("Error fetching resumes:", error); return; }
 
@@ -399,11 +399,10 @@ export default function ScreeningPage() {
 
       {/* Upload Area */}
       <Card
-        className={`border-2 border-dashed cursor-pointer transition-colors ${
-          isDragging
+        className={`border-2 border-dashed cursor-pointer transition-colors ${isDragging
             ? "border-primary bg-primary/5"
             : "border-muted-foreground/30 hover:border-primary/50"
-        }`}
+          }`}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
@@ -552,11 +551,10 @@ export default function ScreeningPage() {
                 filteredResumes.map((r, index) => (
                   <TableRow
                     key={r.id}
-                    className={`cursor-pointer select-none transition-colors ${
-                      selectedIds.has(r.id)
+                    className={`cursor-pointer select-none transition-colors ${selectedIds.has(r.id)
                         ? "bg-primary/5 hover:bg-primary/10"
                         : "hover:bg-muted/40"
-                    }`}
+                      }`}
                     onClick={(e) => {
                       // Only trigger if clicking the row itself, not the delete button
                       const target = e.target as HTMLElement;
@@ -573,7 +571,7 @@ export default function ScreeningPage() {
                     >
                       <Checkbox
                         checked={selectedIds.has(r.id)}
-                        onCheckedChange={() => {}} // handled by row click
+                        onCheckedChange={() => { }} // handled by row click
                         aria-label={`Select ${r.candidateName}`}
                       />
                     </TableCell>
