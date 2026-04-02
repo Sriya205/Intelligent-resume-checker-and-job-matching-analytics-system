@@ -77,7 +77,7 @@ export default function ScreeningPage() {
       rawText: "",
       status: "parsed" as Resume["status"],
       jobId: r.job_id || "",
-      uploadedAt: new Date(r.created_at),
+      uploadedAt: r.created_at ? new Date(r.created_at) : new Date(),
     }));
 
     setResumes(fetched);

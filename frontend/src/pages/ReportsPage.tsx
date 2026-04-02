@@ -23,10 +23,14 @@ function useThemeColors() {
   };
 }
 
-function countByMonth(dates: Date[]): Record<number, number> {
+// FIXED: safely handle Date | string | null | undefined
+function countByMonth(dates: (Date | string | null | undefined)[]): Record<number, number> {
   const counts: Record<number, number> = {};
   dates.forEach(d => {
-    const m = new Date(d).getMonth();
+    if (!d) return;
+    const parsed = new Date(d);
+    if (isNaN(parsed.getTime())) return; // skip invalid dates
+    const m = parsed.getMonth();
     counts[m] = (counts[m] || 0) + 1;
   });
   return counts;
@@ -51,19 +55,23 @@ export default function ReportsPage() {
   const pending = candidates.filter(c => c.status === 'pending').length;
   const hireRate = resumes.length > 0 ? Math.round(hired / resumes.length * 100) : 0;
 
+  // FIXED: pass raw uploadedAt without wrapping in new Date() — countByMonth handles it safely
   const resumesByMonth = countByMonth(
-    resumes.map(r => new Date(r.uploadedAt || Date.now()))
-  );
-  const shortlistedByMonth = countByMonth(
-    candidates
-      .filter(c => c.shortlistedAt || c.status === "shortlisted")
-      .map(c => new Date(c.shortlistedAt || Date.now()))
+    resumes.map(r => r.uploadedAt)
   );
 
+  // FIXED: only use actual shortlistedAt timestamps, no fallback to Date.now()
+  const shortlistedByMonth = countByMonth(
+    candidates
+      .filter(c => c.shortlistedAt)
+      .map(c => c.shortlistedAt)
+  );
+
+  // FIXED: only use actual hiredAt timestamps, no fallback to Date.now()
   const hiredByMonth = countByMonth(
     candidates
-      .filter(c => c.hiredAt || c.status === "hired")
-      .map(c => new Date(c.hiredAt || Date.now()))
+      .filter(c => c.hiredAt)
+      .map(c => c.hiredAt)
   );
 
   const currentMonth = new Date().getMonth();
