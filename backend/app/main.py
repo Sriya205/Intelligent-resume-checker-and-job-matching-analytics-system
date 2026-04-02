@@ -16,7 +16,7 @@ import json
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
-import socket
+
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
@@ -92,24 +92,17 @@ async def send_email(data: SendEmailRequest):
             msg.attach(part)
 
         # Gmail SMTP se bhejo
-
-        try:
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=20)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()  
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_USER, data.to_email, msg.as_string())
 
-            server.quit()
-
-        except socket.gaierror as e:
-            print("Network error:", e)
-            raise HTTPException(status_code=500, detail="Network error: Cannot reach Gmail SMTP")
+        return {"success": True, "message": f"Email sent to {data.to_email}"}
 
     except Exception as e:
-        print("SMTP ERROR:", e)
+        print(f"EMAIL ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ─── Existing Routes ──────────────────────────────────────────────────────────
 
