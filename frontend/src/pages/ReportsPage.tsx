@@ -65,12 +65,16 @@ export default function ReportsPage() {
 
   // Count shortlisted candidates by their shortlistedAt date only (no fallback)
   const shortlistedByMonth = countByMonth(
-    candidates.filter(c => c.shortlistedAt).map(c => c.shortlistedAt)
+    candidates
+      .filter(c => c.status === "shortlisted")
+      .map(c => c.shortlistedAt ? new Date(c.shortlistedAt) : null)
   );
 
   // Count hired candidates by their hiredAt date only (no fallback)
   const hiredByMonth = countByMonth(
-    candidates.filter(c => c.hiredAt).map(c => c.hiredAt)
+    candidates
+      .filter(c => c.status === "hired")
+      .map(c => c.hiredAt ? new Date(c.hiredAt) : null)
   );
 
   const currentMonth = new Date().getMonth();
