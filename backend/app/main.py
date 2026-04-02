@@ -16,10 +16,12 @@ import json
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
+import resend
 
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
+resend.api_key = os.getenv("RESEND_API_KEY")
 url = "https://nfkypjunrwaoezrukusp.supabase.co"
 key = "sb_publishable_hQDMDFTnzRB9cbYyVVsNcA_IhVs0K5i"
 supabase = create_client(url, key)
@@ -71,33 +73,19 @@ class SendEmailRequest(BaseModel):
 @app.post("/send-email")
 async def send_email(data: SendEmailRequest):
     try:
-        msg = MIMEMultipart()
-        msg["From"] = f"TalentAI HR <{GMAIL_USER}>"
-        msg["To"] = data.to_email
-        msg["Subject"] = data.subject
+        params = {
+            "from": "TalentAI HR <onboarding@resend.dev>",
+            "to": [data.to_email],
+            "subject": data.subject,
+            "text": data.message,
+        }
 
-        # Plain text body — sirf ek baar
-        msg.attach(MIMEText(data.message, "plain"))
+        resend.Emails.send(params)
 
-        # Real attachments add karo
-        for attachment in data.attachments:
-            file_data = base64.b64decode(attachment.content)
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(file_data)
-            encoders.encode_base64(part)
-            part.add_header(
-                "Content-Disposition",
-                f"attachment; filename={attachment.filename}"
-            )
-            msg.attach(part)
-
-        # Gmail SMTP se bhejo
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()  
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            server.sendmail(GMAIL_USER, data.to_email, msg.as_string())
-
-        return {"success": True, "message": f"Email sent to {data.to_email}"}
+        return {
+            "success": True,
+            "message": f"Email sent to {data.to_email}"
+        }
 
     except Exception as e:
         print(f"EMAIL ERROR: {e}")
