@@ -23,14 +23,19 @@ function useThemeColors() {
   };
 }
 
-// FIXED: safely handle Date | string | null | undefined
+// Safely extract month (0-11) from any date value
+function safeGetMonth(d: Date | string | null | undefined): number | null {
+  if (!d) return null;
+  const parsed = d instanceof Date ? d : new Date(d);
+  if (isNaN(parsed.getTime())) return null;
+  return parsed.getMonth();
+}
+
 function countByMonth(dates: (Date | string | null | undefined)[]): Record<number, number> {
   const counts: Record<number, number> = {};
   dates.forEach(d => {
-    if (!d) return;
-    const parsed = new Date(d);
-    if (isNaN(parsed.getTime())) return; // skip invalid dates
-    const m = parsed.getMonth();
+    const m = safeGetMonth(d);
+    if (m === null) return;
     counts[m] = (counts[m] || 0) + 1;
   });
   return counts;
@@ -55,38 +60,44 @@ export default function ReportsPage() {
   const pending = candidates.filter(c => c.status === 'pending').length;
   const hireRate = resumes.length > 0 ? Math.round(hired / resumes.length * 100) : 0;
 
-  // FIXED: pass raw uploadedAt without wrapping in new Date() — countByMonth handles it safely
-  const resumesByMonth = countByMonth(
-    resumes.map(r => r.uploadedAt)
-  );
+  // Count resumes by the month they were uploaded
+  const resumesByMonth = countByMonth(resumes.map(r => r.uploadedAt));
 
-  // FIXED: only use actual shortlistedAt timestamps, no fallback to Date.now()
+  // Count shortlisted candidates by their shortlistedAt date only (no fallback)
   const shortlistedByMonth = countByMonth(
-    candidates
-      .filter(c => c.shortlistedAt)
-      .map(c => c.shortlistedAt)
+    candidates.filter(c => c.shortlistedAt).map(c => c.shortlistedAt)
   );
 
-  // FIXED: only use actual hiredAt timestamps, no fallback to Date.now()
+  // Count hired candidates by their hiredAt date only (no fallback)
   const hiredByMonth = countByMonth(
-    candidates
-      .filter(c => c.hiredAt)
-      .map(c => c.hiredAt)
+    candidates.filter(c => c.hiredAt).map(c => c.hiredAt)
   );
 
   const currentMonth = new Date().getMonth();
 
   const funnelTrendData = MONTH_LABELS.map((month, i) => {
-    if (i > currentMonth) return { month, Applied: null, Shortlisted: null, Hired: null };
+    // Future months: return null so line doesn't extend there
+    if (i > currentMonth) {
+      return { month, Applied: null, Shortlisted: null, Hired: null };
+    }
     return {
       month,
-      Applied: resumesByMonth[i] || 0,
-      Shortlisted: shortlistedByMonth[i] || 0,
-      Hired: hiredByMonth[i] || 0,
+      Applied: resumesByMonth[i] ?? 0,
+      Shortlisted: shortlistedByMonth[i] ?? 0,
+      Hired: hiredByMonth[i] ?? 0,
     };
   });
 
   const hasLineData = Object.values(resumesByMonth).some(v => v > 0);
+
+  // Calculate proper Y-axis max so chart doesn't render inverted
+  const allValues = funnelTrendData.flatMap(d => [
+    d.Applied ?? 0,
+    d.Shortlisted ?? 0,
+    d.Hired ?? 0,
+  ]);
+  const yMax = Math.max(...allValues, 1);
+  const yDomainMax = Math.ceil(yMax / 10) * 10 || 10;
 
   const statusData = [
     { name: 'Pending', value: pending, color: C.amber },
@@ -201,7 +212,7 @@ export default function ReportsPage() {
               </div>
 
               {hasLineData ? (
-                <ResponsiveContainer width="100%" height={240}>
+                <ResponsiveContainer width="100%" height={260}>
                   <LineChart
                     data={funnelTrendData}
                     margin={{ left: -10, right: 16, top: 8, bottom: 0 }}
@@ -217,7 +228,8 @@ export default function ReportsPage() {
                       tick={{ fill: C.tick, fontSize: 11 }}
                       axisLine={false}
                       tickLine={false}
-                      width={28}
+                      width={32}
+                      domain={[0, yDomainMax]}
                     />
                     <Tooltip
                       contentStyle={tooltipStyle}
