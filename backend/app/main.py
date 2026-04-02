@@ -33,12 +33,8 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://intelligent-resume-checker-and-job.vercel.app",
-        "http://localhost:8080",
-        "http://localhost:5173",
-        ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
