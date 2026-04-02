@@ -92,7 +92,8 @@ async def send_email(data: SendEmailRequest):
             msg.attach(part)
 
         # Gmail SMTP se bhejo
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 587) as server:
+            server.starttls()
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_USER, data.to_email, msg.as_string())
 
