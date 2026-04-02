@@ -8,18 +8,18 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function useThemeColors() {
   const dark = document.documentElement.classList.contains('dark');
   return {
-    blue:   dark ? '#85B7EB' : '#378ADD',
-    pink:   dark ? '#ED93B1' : '#D4537E',
-    teal:   dark ? '#5DCAA5' : '#1D9E75',
-    amber:  dark ? '#EF9F27' : '#BA7517',
+    blue: dark ? '#85B7EB' : '#378ADD',
+    pink: dark ? '#ED93B1' : '#D4537E',
+    teal: dark ? '#5DCAA5' : '#1D9E75',
+    amber: dark ? '#EF9F27' : '#BA7517',
     purple: dark ? '#AFA9EC' : '#7F77DD',
-    coral:  dark ? '#F0997B' : '#D85A30',
-    tick:   dark ? '#888780' : '#888780',
+    coral: dark ? '#F0997B' : '#D85A30',
+    tick: dark ? '#888780' : '#888780',
   };
 }
 
@@ -45,18 +45,25 @@ export default function ReportsPage() {
   };
 
   const shortlisted = candidates.filter(c => c.status === 'shortlisted').length;
-  const rejected    = candidates.filter(c => c.status === 'rejected').length;
-  const interview   = candidates.filter(c => c.status === 'interview').length;
-  const hired       = candidates.filter(c => c.status === 'hired').length;
-  const pending     = candidates.filter(c => c.status === 'pending').length;
-  const hireRate    = resumes.length > 0 ? Math.round(hired / resumes.length * 100) : 0;
+  const rejected = candidates.filter(c => c.status === 'rejected').length;
+  const interview = candidates.filter(c => c.status === 'interview').length;
+  const hired = candidates.filter(c => c.status === 'hired').length;
+  const pending = candidates.filter(c => c.status === 'pending').length;
+  const hireRate = resumes.length > 0 ? Math.round(hired / resumes.length * 100) : 0;
 
-  const resumesByMonth      = countByMonth(resumes.map(r => r.uploadedAt));
-  const shortlistedByMonth  = countByMonth(
-    candidates.filter(c => c.status === 'shortlisted').map(() => new Date())
+  const resumesByMonth = countByMonth(
+    resumes.map(r => new Date(r.uploadedAt || Date.now()))
   );
-  const hiredByMonth        = countByMonth(
-    candidates.filter(c => c.status === 'hired').map(() => new Date())
+  const shortlistedByMonth = countByMonth(
+    candidates
+      .filter(c => c.shortlistedAt || c.status === "shortlisted")
+      .map(c => new Date(c.shortlistedAt || Date.now()))
+  );
+
+  const hiredByMonth = countByMonth(
+    candidates
+      .filter(c => c.hiredAt || c.status === "hired")
+      .map(c => new Date(c.hiredAt || Date.now()))
   );
 
   const currentMonth = new Date().getMonth();
@@ -65,20 +72,20 @@ export default function ReportsPage() {
     if (i > currentMonth) return { month, Applied: null, Shortlisted: null, Hired: null };
     return {
       month,
-      Applied:     resumesByMonth[i]     || 0,
+      Applied: resumesByMonth[i] || 0,
       Shortlisted: shortlistedByMonth[i] || 0,
-      Hired:       hiredByMonth[i]       || 0,
+      Hired: hiredByMonth[i] || 0,
     };
   });
 
   const hasLineData = Object.values(resumesByMonth).some(v => v > 0);
 
   const statusData = [
-    { name: 'Pending',     value: pending,     color: C.amber  },
-    { name: 'Shortlisted', value: shortlisted, color: C.teal   },
-    { name: 'Rejected',    value: rejected,    color: C.coral  },
-    { name: 'Interview',   value: interview,   color: C.blue   },
-    { name: 'Hired',       value: hired,       color: C.purple },
+    { name: 'Pending', value: pending, color: C.amber },
+    { name: 'Shortlisted', value: shortlisted, color: C.teal },
+    { name: 'Rejected', value: rejected, color: C.coral },
+    { name: 'Interview', value: interview, color: C.blue },
+    { name: 'Hired', value: hired, color: C.purple },
   ].filter(d => d.value > 0);
 
   const skillCounts: Record<string, number> = {};
@@ -105,8 +112,8 @@ export default function ReportsPage() {
     .filter(j => j.count > 0);
 
   const kpis = [
-    { label: 'Total resumes',  val: resumes.length,    sub: 'uploaded' },
-    { label: 'Candidates',     val: candidates.length, sub: 'screened' },
+    { label: 'Total resumes', val: resumes.length, sub: 'uploaded' },
+    { label: 'Candidates', val: candidates.length, sub: 'screened' },
     {
       label: 'Shortlisted',
       val: shortlisted,
@@ -168,9 +175,9 @@ export default function ReportsPage() {
             <CardContent className="pt-3 px-2 pb-4">
               <div className="flex flex-wrap gap-3 px-3 mb-3">
                 {[
-                  { label: 'Applied',     color: C.blue   },
-                  { label: 'Shortlisted', color: C.teal   },
-                  { label: 'Hired',       color: C.amber  },
+                  { label: 'Applied', color: C.blue },
+                  { label: 'Shortlisted', color: C.teal },
+                  { label: 'Hired', color: C.amber },
                 ].map(l => (
                   <span
                     key={l.label}

@@ -165,8 +165,18 @@ export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addCandidate = useCallback((candidate: Candidate) => {
     setCandidates(prev => {
       if (prev.find(c => c.id === candidate.id)) return prev;
-      return [...prev, candidate];
+
+      const newCandidate = {
+        ...candidate,
+
+        appliedAt: new Date(),       // ✅ ADD THIS
+        shortlistedAt: null,         // ✅ ADD THIS
+        hiredAt: null                // ✅ ADD THIS
+      };
+
+      return [...prev, newCandidate];
     });
+
     addActivity({
       type: 'candidate_screened',
       message: `Candidate screened: ${candidate.name} (${candidate.matchScore}% match)`,
@@ -174,9 +184,27 @@ export const ATSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [addActivity]);
 
   const updateCandidate = useCallback((candidate: Candidate) => {
-    setCandidates(prev => prev.map(c => c.id === candidate.id ? candidate : c));
-  }, []);
+    setCandidates(prev =>
+      prev.map(c => {
+        if (c.id !== candidate.id) return c;
 
+        let updated = { ...candidate };
+        if (!c.appliedAt) updated.appliedAt = new Date();
+
+        // ✅ shortlist date add
+        if (candidate.status === "shortlisted" && !c.shortlistedAt) {
+          updated.shortlistedAt = new Date();
+        }
+
+        // ✅ hired date add
+        if (candidate.status === "hired" && !c.hiredAt) {
+          updated.hiredAt = new Date();
+        }
+
+        return updated;
+      })
+    );
+  }, []);
   const deleteCandidate = useCallback((id: string) => {
     setCandidates(prev => prev.filter(c => c.id !== id));
   }, []);
