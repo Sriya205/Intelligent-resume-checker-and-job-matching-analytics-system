@@ -12,7 +12,7 @@ import { Mail, Send, Paperclip, X, FileText, Upload, Search } from 'lucide-react
 import { useToast } from '@/hooks/use-toast';
 import { EmailRecord } from '@/types/ats';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, '');
 
 interface AttachedFile {
   name: string;
@@ -195,8 +195,17 @@ export default function EmailPage() {
           }),
         });
 
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.detail || data.message || "Email send failed");
+        let data = null;
+
+        try {
+          data = await res.json();
+        } catch (e) {
+          console.error("Invalid JSON response");
+        }
+
+        if (!res.ok || !data || !data.success) {
+          throw new Error(data?.detail || data?.message || "Email send failed");
+        }
 
         successCount++;
         addEmailRecord({
