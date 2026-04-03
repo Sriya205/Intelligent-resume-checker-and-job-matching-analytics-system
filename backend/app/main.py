@@ -1,31 +1,24 @@
 import re
-import base64
-import pdfplumber
-from email.mime.text import MIMEText
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
 import io
 import os
-from email.mime.text import MIMEText
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-import pickle
 import json
+import pdfplumber
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
-
 from pathlib import Path
+
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
-url = "https://nfkypjunrwaoezrukusp.supabase.co"
-key = "sb_publishable_hQDMDFTnzRB9cbYyVVsNcA_IhVs0K5i"
-supabase = create_client(url, key)
+# ── Supabase ──────────────────────────────────────────────────────────────────
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nfkypjunrwaoezrukusp.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_hQDMDFTnzRB9cbYyVVsNcA_IhVs0K5i")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ── Groq (OpenAI-compatible) ──────────────────────────────────────────────────
 client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
@@ -41,10 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Gmail credentials — .env mein daalo ya yahan directly likho
-GMAIL_USER = os.getenv("GMAIL_USER", "your_gmail@gmail.com")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "your_app_password_here")
-
 
 def clean_json(raw: str) -> dict:
     raw = raw.strip()
@@ -53,74 +42,12 @@ def clean_json(raw: str) -> dict:
     return json.loads(raw)
 
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
+# ── Routes ────────────────────────────────────────────────────────────────────
 
-def get_credentials():
-    creds = None
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "TalentAI backend running"}
 
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
-
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            'credentials.json', SCOPES)
-        creds = flow.run_local_server(port=0)
-
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-
-    return creds
-
-
-def send_gmail(to_email, subject, message):
-    creds = get_credentials()
-
-    service = build('gmail', 'v1', credentials=creds)
-
-    msg = MIMEText(message)
-    msg['to'] = to_email
-    msg['subject'] = subject
-
-    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-
-    service.users().messages().send(
-        userId="me",
-        body={'raw': raw}
-    ).execute()
-# ─── Email Models ────────────────────────────────────────────────────────────
-
-class AttachmentModel(BaseModel):
-    filename: str
-    content: str   # base64 encoded
-    mimeType: str
-
-class SendEmailRequest(BaseModel):
-    to_email: str
-    to_name: str
-    subject: str
-    message: str
-    attachments: Optional[List[AttachmentModel]] = []
-
-
-# ─── Send Email Route ─────────────────────────────────────────────────────────
-
-@app.post("/send-email")
-async def send_email(data: SendEmailRequest):
-    try:
-        send_gmail(data.to_email, data.subject, data.message)
-
-        return {
-            "success": True,
-            "message": f"Email sent to {data.to_email}"
-        }
-
-    except Exception as e:
-        print(f"EMAIL ERROR: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ─── Existing Routes ──────────────────────────────────────────────────────────
 
 @app.post("/parse-resume")
 async def parse_resume(file: UploadFile = File(...)):
@@ -167,9 +94,9 @@ No markdown, no extra text. Only raw JSON."""
 @app.post("/ai-analysis")
 async def ai_analysis(data: dict):
     try:
-        resume_text = data.get("resume", "")
-        job_desc = data.get("job", "")
-        candidate_name = data.get("candidate_name", "Candidate")
+        resume_text      = data.get("resume", "")
+        job_desc         = data.get("job", "")
+        candidate_name   = data.get("candidate_name", "Candidate")
         candidate_skills = data.get("candidate_skills", [])
 
         response = client.chat.completions.create(

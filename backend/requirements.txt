@@ -5,4 +5,3 @@ python-multipart
 openai
 supabase
 python-dotenv
-resend

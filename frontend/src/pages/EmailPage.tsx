@@ -8,11 +8,25 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Mail, Send, Paperclip, X, FileText, Upload, Search } from 'lucide-react';
+import { Mail, Send, Paperclip, X, FileText, Upload, Search, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { EmailRecord } from '@/types/ats';
+import emailjs from '@emailjs/browser';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, '');
+// ─── EmailJS Config ───────────────────────────────────────────────────────────
+// Set these in your .env file:
+//   VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
+//   VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
+//   VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx
+//
+// Steps to get these (FREE — 200 emails/month):
+//  1. Go to https://www.emailjs.com/ → Sign Up (free)
+//  2. "Add New Service" → choose Gmail → Connect your Gmail
+//  3. "Email Templates" → Create Template with these variables:
+//     {{to_email}}, {{to_name}}, {{subject}}, {{message}}, {{from_name}}
+//  4. Copy Service ID, Template ID, Public Key into your .env
+const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  || '';
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || '';
+const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  || '';
 
 interface AttachedFile {
   name: string;
@@ -21,81 +35,90 @@ interface AttachedFile {
   base64: string;
 }
 
-const formatFileSize = (bytes: number): string => {
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 };
 
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 
-// Map template type → candidate status filter
-// e.g. "shortlist" template => show shortlisted candidates
 const templateTypeToStatus: Record<string, string | null> = {
   shortlist: 'shortlisted',
   rejection: 'rejected',
   interview: 'interview',
-  offer: 'hired',   // offer letter → hired candidates
+  offer: 'hired',
+};
+
+const statusBadgeStyle: Record<string, string> = {
+  pending:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  rejected:    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  interview:   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  hired:       'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
 };
 
 export default function EmailPage() {
   const { candidates, emailTemplates, emailRecords, addEmailRecord, jobs } = useATS();
   const { toast } = useToast();
-  const [selectedTemplate, setSelectedTemplate] = useState("");
+
+  const [selectedTemplate, setSelectedTemplate]   = useState('');
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
-  const [sending, setSending] = useState(false);
-  const [rawSubject, setRawSubject] = useState("");
-  const [rawBody, setRawBody] = useState("");
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
-  const [candidateSearch, setCandidateSearch] = useState<string>("");
+  const [sending, setSending]                     = useState(false);
+  const [rawSubject, setRawSubject]               = useState('');
+  const [rawBody, setRawBody]                     = useState('');
+  const [attachedFiles, setAttachedFiles]         = useState<AttachedFile[]>([]);
+  const [isProcessingFile, setIsProcessingFile]   = useState(false);
+  const [candidateSearch, setCandidateSearch]     = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isEmailJSConfigured =
+    EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY;
 
   const template = emailTemplates.find(t => t.id === selectedTemplate);
   const isOfferLetterTemplate =
-    template?.type === "offer" || template?.name?.toLowerCase().includes("offer");
+    template?.type === 'offer' || template?.name?.toLowerCase().includes('offer');
 
-  // Determine which status to filter by based on selected template type
-  const templateStatusFilter = template ? (templateTypeToStatus[template.type] ?? null) : null;
+  const templateStatusFilter = template
+    ? (templateTypeToStatus[template.type] ?? null)
+    : null;
 
   const previewCandidate = selectedCandidates.length > 0
     ? candidates.find(c => c.id === selectedCandidates[0])
     : null;
 
   const resolvePlaceholders = (text: string, candidateId?: string) => {
-    const c = candidateId ? candidates.find(x => x.id === candidateId) : previewCandidate;
+    const c = candidateId
+      ? candidates.find(x => x.id === candidateId)
+      : previewCandidate;
     if (!c) return text;
     const job = jobs.find(j => j.id === c.jobId);
     return text
       .replace(/\{\{candidateName\}\}/g, c.name)
-      .replace(/\{\{jobTitle\}\}/g, job?.title || "");
+      .replace(/\{\{jobTitle\}\}/g, job?.title || '');
   };
 
   const previewSubject = previewCandidate ? resolvePlaceholders(rawSubject) : rawSubject;
-  const previewBody = previewCandidate ? resolvePlaceholders(rawBody) : rawBody;
+  const previewBody    = previewCandidate ? resolvePlaceholders(rawBody)    : rawBody;
 
   const handleTemplateChange = (id: string) => {
     setSelectedTemplate(id);
     const tmpl = emailTemplates.find(t => t.id === id);
     if (tmpl) { setRawSubject(tmpl.subject); setRawBody(tmpl.body); }
     setAttachedFiles([]);
-    setSelectedCandidates([]); // Clear selection when template changes
-    setCandidateSearch("");
+    setSelectedCandidates([]);
+    setCandidateSearch('');
   };
 
-  // Filter candidates:
-  // 1. By template type (status-based) — if a template is selected
-  // 2. By search query
-  const statusFilteredCandidates = candidates.filter(c => {
-    if (!templateStatusFilter) return true; // no template or unknown type → show all
-    return c.status === templateStatusFilter;
-  });
+  const statusFilteredCandidates = candidates.filter(c =>
+    templateStatusFilter ? c.status === templateStatusFilter : true
+  );
 
   const filteredCandidates = statusFilteredCandidates.filter(c => {
     if (!candidateSearch.trim()) return true;
@@ -108,11 +131,10 @@ export default function EmailPage() {
     );
   });
 
-  const toggleCandidate = (id: string) => {
+  const toggleCandidate = (id: string) =>
     setSelectedCandidates(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
-  };
 
   const handleSelectAll = () => {
     const allIds = filteredCandidates.map(c => c.id);
@@ -126,22 +148,22 @@ export default function EmailPage() {
 
   const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files?.length) return;
     setIsProcessingFile(true);
     const newFiles: AttachedFile[] = [];
 
     for (const file of Array.from(files)) {
       if (file.size > 5 * 1024 * 1024) {
-        toast({ title: "File Too Large", description: file.name + " — max 5MB.", variant: "destructive" });
+        toast({ title: 'File Too Large', description: `${file.name} — max 5MB.`, variant: 'destructive' });
         continue;
       }
       const allowed = [
-        "application/pdf", "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "image/jpeg", "image/png",
+        'application/pdf', 'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/jpeg', 'image/png',
       ];
       if (!allowed.includes(file.type)) {
-        toast({ title: "Invalid Type", description: file.name + ": Only PDF, DOC, DOCX, JPG, PNG.", variant: "destructive" });
+        toast({ title: 'Invalid Type', description: `${file.name}: Only PDF, DOC, DOCX, JPG, PNG.`, variant: 'destructive' });
         continue;
       }
       const base64 = await fileToBase64(file);
@@ -149,21 +171,30 @@ export default function EmailPage() {
     }
 
     setAttachedFiles(prev => [...prev, ...newFiles]);
-    if (newFiles.length > 0) toast({ title: "File Attached", description: newFiles.length + " file(s) ready to send." });
+    if (newFiles.length) toast({ title: 'File Attached', description: `${newFiles.length} file(s) ready.` });
     setIsProcessingFile(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removeAttachment = (index: number) =>
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
 
+  // ─── Send via EmailJS ─────────────────────────────────────────────────────
   const sendEmails = async () => {
-    if (selectedCandidates.length === 0) {
-      toast({ title: "Select candidates", description: "Please select at least one candidate.", variant: "destructive" });
+    if (!selectedCandidates.length) {
+      toast({ title: 'Select candidates', description: 'Please select at least one candidate.', variant: 'destructive' });
       return;
     }
-    if (isOfferLetterTemplate && attachedFiles.length === 0) {
-      toast({ title: "Attachment Required", description: "Please attach the offer letter before sending.", variant: "destructive" });
+    if (!isEmailJSConfigured) {
+      toast({
+        title: 'EmailJS Not Configured',
+        description: 'Add VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_TEMPLATE_ID, VITE_EMAILJS_PUBLIC_KEY to your .env file.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (isOfferLetterTemplate && !attachedFiles.length) {
+      toast({ title: 'Attachment Required', description: 'Please attach the offer letter before sending.', variant: 'destructive' });
       return;
     }
 
@@ -176,62 +207,51 @@ export default function EmailPage() {
       if (!c) continue;
 
       const finalSubject = resolvePlaceholders(rawSubject, cid);
-      const finalBody = resolvePlaceholders(rawBody, cid);
+      const finalBody    = resolvePlaceholders(rawBody, cid);
 
       try {
-        const res = await fetch(BACKEND_URL + "/send-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to_email: c.email,
-            to_name: c.name,
-            subject: finalSubject,
-            message: finalBody,
-            attachments: attachedFiles.map(af => ({
-              filename: af.name,
-              content: af.base64,
-              mimeType: af.type,
-            })),
-          }),
-        });
+        // EmailJS template params — match these to your EmailJS template variables
+        const templateParams = {
+          to_email:  c.email,
+          to_name:   c.name,
+          from_name: 'TalentAI HR Team',
+          subject:   finalSubject,
+          message:   finalBody,
+          reply_to:  '', // optional
+        };
 
-        let data = null;
-
-        try {
-          data = await res.json();
-        } catch (e) {
-          console.error("Invalid JSON response");
-        }
-
-        if (!res.ok || !data || !data.success) {
-          throw new Error(data?.detail || data?.message || "Email send failed");
-        }
+        await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          templateParams,
+          EMAILJS_PUBLIC_KEY,
+        );
 
         successCount++;
         addEmailRecord({
           id: crypto.randomUUID(),
           candidateId: c.id,
           candidateName: c.name,
-          templateType: template?.type || "custom",
+          templateType: template?.type || 'custom',
           subject: finalSubject,
-          status: "sent",
+          status: 'sent',
           sentAt: new Date(),
         });
       } catch (err: any) {
-        console.error("Email failed for " + c.name + ":", err);
-        toast({
-          title: "Failed: " + c.name,
-          description: err?.message || "Unknown error",
-          variant: "destructive",
-        });
+        console.error(`Email failed for ${c.name}:`, err);
         failCount++;
+        toast({
+          title: `Failed: ${c.name}`,
+          description: err?.text || err?.message || 'Unknown error',
+          variant: 'destructive',
+        });
         addEmailRecord({
           id: crypto.randomUUID(),
           candidateId: c.id,
           candidateName: c.name,
-          templateType: template?.type || "custom",
+          templateType: template?.type || 'custom',
           subject: finalSubject,
-          status: "failed",
+          status: 'failed',
           sentAt: new Date(),
         });
       }
@@ -239,28 +259,40 @@ export default function EmailPage() {
 
     setSending(false);
     setSelectedCandidates([]);
-    if (successCount > 0) toast({ title: "Emails Sent!", description: successCount + " email(s) sent!" });
-    if (failCount > 0) toast({ title: "Some Failed", description: failCount + " email(s) failed.", variant: "destructive" });
-  };
-
-  // Status badge colors for the candidate list
-  const statusBadgeStyle: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-    shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-    rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-    interview: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-    hired: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+    if (successCount > 0) toast({ title: 'Emails Sent!', description: `${successCount} email(s) sent successfully!` });
+    if (failCount > 0)    toast({ title: 'Some Failed',  description: `${failCount} email(s) failed.`, variant: 'destructive' });
   };
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Email Automation</h1>
-        <p className="text-muted-foreground">Send emails with real attachments to candidates</p>
+        <p className="text-muted-foreground">Send personalised emails to candidates via EmailJS</p>
       </div>
 
+      {/* EmailJS setup banner */}
+      {!isEmailJSConfigured && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-amber-800 dark:text-amber-300 mb-1">EmailJS Setup Required</p>
+            <ol className="list-decimal list-inside space-y-1 text-amber-700 dark:text-amber-400">
+              <li>Go to <a href="https://www.emailjs.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">emailjs.com</a> → Sign up free (200 emails/month)</li>
+              <li>Add New Service → Connect your Gmail account</li>
+              <li>Create Email Template with variables: <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded text-xs">{"{{to_email}}, {{to_name}}, {{subject}}, {{message}}, {{from_name}}"}</code></li>
+              <li>Add to your <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded text-xs">.env</code> file on Vercel (Environment Variables):</li>
+            </ol>
+            <pre className="mt-2 bg-amber-100 dark:bg-amber-900/40 rounded p-2 text-xs font-mono text-amber-900 dark:text-amber-300">
+{`VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
+VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
+VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx`}
+            </pre>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Compose */}
+        {/* ── Compose ── */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -294,8 +326,8 @@ export default function EmailPage() {
                     const job = jobs.find(j => j.id === previewCandidate.jobId);
                     setRawSubject(
                       e.target.value
-                        .replace(new RegExp(previewCandidate.name, "g"), "{{candidateName}}")
-                        .replace(new RegExp(job?.title || "\x00", "g"), "{{jobTitle}}")
+                        .replace(new RegExp(previewCandidate.name, 'g'), '{{candidateName}}')
+                        .replace(new RegExp(job?.title || '\x00', 'g'), '{{jobTitle}}')
                     );
                   } else { setRawSubject(e.target.value); }
                 }}
@@ -312,8 +344,8 @@ export default function EmailPage() {
                     const job = jobs.find(j => j.id === previewCandidate.jobId);
                     setRawBody(
                       e.target.value
-                        .replace(new RegExp(previewCandidate.name, "g"), "{{candidateName}}")
-                        .replace(new RegExp(job?.title || "\x00", "g"), "{{jobTitle}}")
+                        .replace(new RegExp(previewCandidate.name, 'g'), '{{candidateName}}')
+                        .replace(new RegExp(job?.title || '\x00', 'g'), '{{jobTitle}}')
                     );
                   } else { setRawBody(e.target.value); }
                 }}
@@ -327,6 +359,7 @@ export default function EmailPage() {
               : <p className="text-xs text-muted-foreground">Select a candidate to see live preview.</p>
             }
 
+            {/* Attachments (for offer letter) */}
             {isOfferLetterTemplate && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -341,16 +374,14 @@ export default function EmailPage() {
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Upload className="w-3 h-3 mr-1" />
-                    {isProcessingFile ? "Processing..." : "Attach File"}
+                    {isProcessingFile ? 'Processing...' : 'Attach File'}
                   </Button>
                 </div>
-
                 <input
                   ref={fileInputRef} type="file" multiple
                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                   className="hidden" onChange={handleFileAttach}
                 />
-
                 {attachedFiles.length > 0 ? (
                   <div className="space-y-1.5 rounded-md border p-2 bg-muted/30">
                     {attachedFiles.map((file, index) => (
@@ -381,41 +412,39 @@ export default function EmailPage() {
               </div>
             )}
 
-            <Button onClick={sendEmails} className="w-full" disabled={sending || isProcessingFile}>
+            <Button
+              onClick={sendEmails}
+              className="w-full"
+              disabled={sending || isProcessingFile || !isEmailJSConfigured}
+            >
               <Send className="w-4 h-4 mr-2" />
               {sending
-                ? "Sending..."
-                : `Send to ${selectedCandidates.length} candidate(s)${attachedFiles.length > 0 ? ` (${attachedFiles.length} file attached)` : ""}`
+                ? 'Sending...'
+                : !isEmailJSConfigured
+                  ? 'Configure EmailJS First'
+                  : `Send to ${selectedCandidates.length} candidate(s)`
               }
             </Button>
           </CardContent>
         </Card>
 
-        {/* Candidate selector */}
+        {/* ── Candidate Selector ── */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Select Candidates</CardTitle>
-
-            {/* Template filter hint */}
             {template && templateStatusFilter && (
               <div className="flex items-center gap-2 mt-1 p-2 rounded-md bg-primary/5 border border-primary/20">
-                <span className="text-xs text-muted-foreground">
-                  Showing only
-                </span>
+                <span className="text-xs text-muted-foreground">Showing only</span>
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusBadgeStyle[templateStatusFilter] || ''}`}>
                   {templateStatusFilter}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  candidates for <strong>{template.name}</strong> template
-                </span>
+                <span className="text-xs text-muted-foreground">candidates</span>
               </div>
             )}
-
-            {/* Search bar */}
             <div className="relative mt-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search candidates by name, email, job..."
+                placeholder="Search by name, email, job..."
                 value={candidateSearch}
                 onChange={e => setCandidateSearch(e.target.value)}
                 className="pl-9 pr-9 h-9 text-sm"
@@ -443,8 +472,7 @@ export default function EmailPage() {
                 <p className="text-sm text-muted-foreground">
                   {templateStatusFilter
                     ? `No ${templateStatusFilter} candidates found.`
-                    : "No candidates match your search."
-                  }
+                    : 'No candidates match your search.'}
                 </p>
                 {templateStatusFilter && (
                   <p className="text-xs text-muted-foreground/70">
@@ -454,7 +482,6 @@ export default function EmailPage() {
               </div>
             ) : (
               <div className="space-y-1">
-                {/* Select all */}
                 <div className="flex items-center gap-2 px-2 py-1.5 border-b mb-2">
                   <Checkbox
                     checked={filteredCandidates.length > 0 && filteredCandidates.every(c => selectedCandidates.includes(c.id))}
@@ -464,7 +491,6 @@ export default function EmailPage() {
                     Select all ({filteredCandidates.length})
                   </span>
                 </div>
-
                 <div className="max-h-80 overflow-y-auto space-y-1">
                   {filteredCandidates.map(c => (
                     <label key={c.id} className="flex items-center gap-3 p-2 rounded hover:bg-muted cursor-pointer">
@@ -476,9 +502,7 @@ export default function EmailPage() {
                         <p className="text-sm font-medium truncate">{c.name}</p>
                         <p className="text-xs text-muted-foreground truncate">
                           {c.email}
-                          {jobs.find(j => j.id === c.jobId)?.title
-                            ? ` · ${jobs.find(j => j.id === c.jobId)?.title}`
-                            : ''}
+                          {jobs.find(j => j.id === c.jobId)?.title ? ` · ${jobs.find(j => j.id === c.jobId)?.title}` : ''}
                           {' · '}{c.matchScore}% match
                         </p>
                       </div>
@@ -494,7 +518,7 @@ export default function EmailPage() {
         </Card>
       </div>
 
-      {/* Sent emails history */}
+      {/* ── Sent History ── */}
       {emailRecords.length > 0 && (
         <Card>
           <CardHeader>
@@ -519,11 +543,13 @@ export default function EmailPage() {
                   <TableCell className="max-w-xs truncate">{r.subject}</TableCell>
                   <TableCell><Badge variant="secondary">{r.templateType}</Badge></TableCell>
                   <TableCell>
-                    <Badge className={r.status === "sent" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
+                    <Badge className={r.status === 'sent' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
                       {r.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{r.sentAt.toLocaleString()}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {r.sentAt.toLocaleString()}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
