@@ -17,13 +17,7 @@ import emailjs from '@emailjs/browser';
 //   VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
 //   VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
 //   VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx
-//
-// Steps to get these (FREE — 200 emails/month):
-//  1. Go to https://www.emailjs.com/ → Sign Up (free)
-//  2. "Add New Service" → choose Gmail → Connect your Gmail
-//  3. "Email Templates" → Create Template with these variables:
-//     {{to_email}}, {{to_name}}, {{subject}}, {{message}}, {{from_name}}
-//  4. Copy Service ID, Template ID, Public Key into your .env
+
 const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  || '';
 const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || '';
 const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  || '';
@@ -220,7 +214,7 @@ export default function EmailPage() {
           to_name:   c.name,
           from_name: 'TalentAI HR Team',
           subject:   finalSubject,
-          message:   finalBody,
+          message: `<div style="white-space: pre-line;">${finalBody}</div>`,
           reply_to:  '', // optional
         };
 
