@@ -28,6 +28,10 @@ const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  || '';
 const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || '';
 const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  || '';
 
+console.log("SERVICE ID:", EMAILJS_SERVICE_ID);
+console.log("TEMPLATE ID:", EMAILJS_TEMPLATE_ID);
+console.log("PUBLIC KEY:", EMAILJS_PUBLIC_KEY);
+
 interface AttachedFile {
   name: string;
   size: number;
