@@ -230,15 +230,15 @@ export default function EmailPage() {
 
       try {
         // EmailJS template params — match these to your EmailJS template variables
+        const finalMessage = fileUrl
+          ? `${finalBody}\n\nDownload your offer letter:\n${fileUrl}`
+          : finalBody;
+
         const templateParams = {
           to_email: c.email,
           to_name: c.name,
           from_name: 'TalentAI HR Team',
           subject: finalSubject,
-          const finalMessage = fileUrl
-            ? `${finalBody}\n\nDownload your offer letter:\n${fileUrl}`
-            : finalBody;
-
           message: `<div style="white-space: pre-line;">${finalMessage}</div>`,
           reply_to: '', // optional
         };
