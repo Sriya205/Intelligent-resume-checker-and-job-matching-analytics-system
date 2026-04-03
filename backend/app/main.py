@@ -1,27 +1,27 @@
 import re
 import base64
 import pdfplumber
-import smtplib
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import io
 import os
+from email.mime.text import MIMEText
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+import pickle
 import json
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
-import resend
 
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
-resend.api_key = os.getenv("RESEND_API_KEY")
 url = "https://nfkypjunrwaoezrukusp.supabase.co"
 key = "sb_publishable_hQDMDFTnzRB9cbYyVVsNcA_IhVs0K5i"
 supabase = create_client(url, key)
@@ -53,6 +53,41 @@ def clean_json(raw: str) -> dict:
     return json.loads(raw)
 
 
+SCOPES = ['https://www.googleapis.com/auth/gmail.send']
+
+def get_credentials():
+    creds = None
+
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'credentials.json', SCOPES)
+        creds = flow.run_local_server(port=0)
+
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
+
+    return creds
+
+
+def send_gmail(to_email, subject, message):
+    creds = get_credentials()
+
+    service = build('gmail', 'v1', credentials=creds)
+
+    msg = MIMEText(message)
+    msg['to'] = to_email
+    msg['subject'] = subject
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    service.users().messages().send(
+        userId="me",
+        body={'raw': raw}
+    ).execute()
 # ─── Email Models ────────────────────────────────────────────────────────────
 
 class AttachmentModel(BaseModel):
@@ -73,14 +108,7 @@ class SendEmailRequest(BaseModel):
 @app.post("/send-email")
 async def send_email(data: SendEmailRequest):
     try:
-        params = {
-            "from": "TalentAI HR <onboarding@resend.dev>",
-            "to": [data.to_email],
-            "subject": data.subject,
-            "text": data.message,
-        }
-
-        resend.Emails.send(params)
+        send_gmail(data.to_email, data.subject, data.message)
 
         return {
             "success": True,

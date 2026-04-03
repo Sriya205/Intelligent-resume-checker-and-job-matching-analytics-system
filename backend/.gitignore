@@ -20,3 +20,7 @@ uploads/
 .env
 .env.local
 .env*.local
+
+credentials.json
+
+token.pickle
