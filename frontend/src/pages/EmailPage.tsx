@@ -18,9 +18,9 @@ import emailjs from '@emailjs/browser';
 //   VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
 //   VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx
 
-const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID  || '';
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || '';
 const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || '';
-const EMAILJS_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  || '';
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || '';
 
 console.log("SERVICE ID:", EMAILJS_SERVICE_ID);
 console.log("TEMPLATE ID:", EMAILJS_TEMPLATE_ID);
@@ -31,6 +31,7 @@ interface AttachedFile {
   size: number;
   type: string;
   base64: string;
+  file: File;
 }
 
 const formatFileSize = (bytes: number) => {
@@ -55,25 +56,25 @@ const templateTypeToStatus: Record<string, string | null> = {
 };
 
 const statusBadgeStyle: Record<string, string> = {
-  pending:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   shortlisted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-  rejected:    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  interview:   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-  hired:       'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+  rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  interview: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  hired: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
 };
 
 export default function EmailPage() {
   const { candidates, emailTemplates, emailRecords, addEmailRecord, jobs } = useATS();
   const { toast } = useToast();
 
-  const [selectedTemplate, setSelectedTemplate]   = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
-  const [sending, setSending]                     = useState(false);
-  const [rawSubject, setRawSubject]               = useState('');
-  const [rawBody, setRawBody]                     = useState('');
-  const [attachedFiles, setAttachedFiles]         = useState<AttachedFile[]>([]);
-  const [isProcessingFile, setIsProcessingFile]   = useState(false);
-  const [candidateSearch, setCandidateSearch]     = useState('');
+  const [sending, setSending] = useState(false);
+  const [rawSubject, setRawSubject] = useState('');
+  const [rawBody, setRawBody] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [candidateSearch, setCandidateSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEmailJSConfigured =
@@ -103,7 +104,7 @@ export default function EmailPage() {
   };
 
   const previewSubject = previewCandidate ? resolvePlaceholders(rawSubject) : rawSubject;
-  const previewBody    = previewCandidate ? resolvePlaceholders(rawBody)    : rawBody;
+  const previewBody = previewCandidate ? resolvePlaceholders(rawBody) : rawBody;
 
   const handleTemplateChange = (id: string) => {
     setSelectedTemplate(id);
@@ -165,7 +166,7 @@ export default function EmailPage() {
         continue;
       }
       const base64 = await fileToBase64(file);
-      newFiles.push({ name: file.name, size: file.size, type: file.type, base64 });
+      newFiles.push({ name: file.name, size: file.size, type: file.type, base64, file });
     }
 
     setAttachedFiles(prev => [...prev, ...newFiles]);
@@ -205,17 +206,41 @@ export default function EmailPage() {
       if (!c) continue;
 
       const finalSubject = resolvePlaceholders(rawSubject, cid);
-      const finalBody    = resolvePlaceholders(rawBody, cid);
+      const finalBody = resolvePlaceholders(rawBody, cid);
+
+      let fileUrl = null;
+
+      if (attachedFiles.length > 0) {
+        const file = attachedFiles[0].file;
+
+        const fileName = `${Date.now()}-${file.name}`;
+
+        const { error } = await supabase.storage
+          .from("offers")
+          .upload(fileName, file);
+
+        if (!error) {
+          const { data } = supabase.storage
+            .from("offers")
+            .getPublicUrl(fileName);
+
+          fileUrl = data.publicUrl;
+        }
+      }
 
       try {
         // EmailJS template params — match these to your EmailJS template variables
         const templateParams = {
-          to_email:  c.email,
-          to_name:   c.name,
+          to_email: c.email,
+          to_name: c.name,
           from_name: 'TalentAI HR Team',
-          subject:   finalSubject,
-          message: `<div style="white-space: pre-line;">${finalBody}</div>`,
-          reply_to:  '', // optional
+          subject: finalSubject,
+          const finalMessage = fileUrl
+            ? `${finalBody}\n\nDownload your offer letter:\n${fileUrl}`
+            : finalBody;
+
+          message: `<div style="white-space: pre-line;">${finalMessage}</div>`,
+          reply_to: '', // optional
         };
 
         await emailjs.send(
@@ -258,7 +283,7 @@ export default function EmailPage() {
     setSending(false);
     setSelectedCandidates([]);
     if (successCount > 0) toast({ title: 'Emails Sent!', description: `${successCount} email(s) sent successfully!` });
-    if (failCount > 0)    toast({ title: 'Some Failed',  description: `${failCount} email(s) failed.`, variant: 'destructive' });
+    if (failCount > 0) toast({ title: 'Some Failed', description: `${failCount} email(s) failed.`, variant: 'destructive' });
   };
 
   return (
@@ -281,7 +306,7 @@ export default function EmailPage() {
               <li>Add to your <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded text-xs">.env</code> file on Vercel (Environment Variables):</li>
             </ol>
             <pre className="mt-2 bg-amber-100 dark:bg-amber-900/40 rounded p-2 text-xs font-mono text-amber-900 dark:text-amber-300">
-{`VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
+              {`VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
 VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
 VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx`}
             </pre>
